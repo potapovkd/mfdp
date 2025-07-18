@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - ml_network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: pricing
+      RABBITMQ_DEFAULT_PASS: pricing123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - ml_network
+
+  ml-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      MODEL_PATH: "/app/models/catboost_pricing_model.cbm"
+      PREPROCESSING_PATH: "/app/models/preprocessing_pipeline.pkl"
+      TASK_QUEUE: "pricing_tasks"
+      WORKER_THREADS: "4"
+      BATCH_SIZE: "5"
+      POLL_TIMEOUT: "1"
+    volumes:
+      - ../models:/app/models:ro
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - rabbitmq
+    networks:
+      - ml_network
+    deploy:
+      replicas: 3  # 3 воркера по умолчанию
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Можно масштабировать: docker-compose up --scale ml-worker=10
+  
+  monitor:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - ml_network
+
+volumes:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  ml_network:
+    driver: bridge 

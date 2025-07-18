@@ -1,0 +1,28 @@
+[tool.ruff]
+# Увеличиваем лимит длины строки.
+line-length = 140
+# Игнорируем самые строгие правила докстрингов и ошибок стиля переменных, чтобы сосредоточиться на ключевых ошибках.
+lint.ignore = [
+    "D100", "D101", "D102", "D103", "D104", "D107", "D400", "D401", "D402", "D415",
+    "D205", "D200",  # blank line after summary / one-line docstring
+    "N806", "N803", "N818",  # naming style
+    "E722",  # bare except
+]
+
+# Исключаем jupyter notebooks из проверки.
+extend-exclude = ["experiments/*"]
+lint.select = [
+    "A",
+    "D",
+    "E",
+    "F",
+    "N",
+    "Q",
+    "W",
+]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["D104"]

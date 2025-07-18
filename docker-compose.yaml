@@ -1,0 +1,187 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: pricing_optimization
+      POSTGRES_USER: pricing_user
+      POSTGRES_PASSWORD: pricing_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - pricing_network
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - pricing_network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: pricing
+      RABBITMQ_DEFAULT_PASS: pricing123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - pricing_network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: pricing_optimization
+      DB_USER: pricing_user
+      DB_PASSWORD: pricing_password
+      SECRET_KEY: super-secret-key-for-pricing-optimization-2024
+      ALLOWED_HOSTS: "*"
+      API_PREFIX: "/api/v1"
+      ACCESS_TOKEN_EXPIRES_MINUTES: 60
+      REFRESH_TOKEN_EXPIRES_HOURS: 24
+      # ML Model settings
+      MODEL_PATH: "models/catboost_pricing_model.cbm"
+      PREPROCESSING_PATH: "models/preprocessing_pipeline.pkl"
+      CONFIDENCE_THRESHOLD: "0.7"
+      MAX_PRICE_LIMIT: "10000.0"
+      MIN_PRICE_LIMIT: "0.1"
+      REQUEST_PRICE: "5.0"
+      # ML Worker scaling settings
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379" 
+      REDIS_DB: "0"
+      RABBITMQ_HOST: "rabbitmq"
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: "pricing"
+      RABBITMQ_PASS: "pricing123"
+      TASK_QUEUE: "pricing_tasks"
+      USE_ML_WORKERS: "true"
+      ML_WORKER_TIMEOUT: "30"
+    volumes:
+      - ./models:/app/models:ro  # Mount trained models
+    depends_on:
+      - db
+      - redis
+      - rabbitmq
+    ports:
+      - "8000:8000"
+    networks:
+      - pricing_network
+
+  webui:
+    build:
+      context: webui/
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000/api/v1
+    depends_on:
+      - api
+    ports:
+      - "8001:8001"
+    networks:
+      - pricing_network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - webui
+    networks:
+      - pricing_network
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - pricing_network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - pricing_network
+
+  # ML Workers (масштабируемые воркеры)
+  ml-worker:
+    build:
+      context: ml_worker/
+      dockerfile: Dockerfile
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: pricing
+      RABBITMQ_PASS: pricing123
+      MODEL_PATH: "/app/models/catboost_pricing_model.cbm"
+      PREPROCESSING_PATH: "/app/models/preprocessing_pipeline.pkl"
+      TASK_QUEUE: "pricing_tasks"
+      WORKER_THREADS: "4"
+      BATCH_SIZE: "5"
+      POLL_TIMEOUT: "1"
+    volumes:
+      - ./models:/app/models:ro
+      - ./ml_worker/logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - pricing_network
+    deploy:
+      replicas: 2  # 2 воркера по умолчанию
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # Масштабирование: docker-compose up --scale ml-worker=10
+
+volumes:
+  postgres_data:
+  grafana_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  pricing_network:
+    driver: bridge

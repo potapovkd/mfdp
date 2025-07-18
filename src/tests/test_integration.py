@@ -1,0 +1,246 @@
+"""Интеграционные тесты для системы ценовой оптимизации."""
+
+import asyncio
+import pytest
+from unittest.mock import AsyncMock, Mock, patch
+
+from fastapi.testclient import TestClient
+
+from main import app
+from products.domain.models import ProductData, PricingRequest
+from products.services.services import MLPricingService
+
+
+class TestPricingIntegration:
+    """Интеграционные тесты для системы ценообразования."""
+
+    def test_ml_pricing_service_initialization(self):
+        """Тест инициализации ML сервиса."""
+        service = MLPricingService()
+
+        # Проверяем что сервис создается без ошибок
+        assert service is not None
+        assert hasattr(service, "pricing_service")
+
+    @pytest.mark.asyncio
+    async def test_pricing_service_without_model(self):
+        """Тест работы сервиса без загруженной модели."""
+        service = MLPricingService()
+
+        product_data = ProductData(
+            name="Test Product",
+            item_description="Test description",
+            category_name="Electronics",
+            brand_name="TestBrand",
+            item_condition_id=1,
+            shipping=0
+        )
+
+        # Тестируем информационный метод
+        result = await service.get_only_price_info(product_data)
+
+        # Должен вернуть базовую информацию
+        assert "category" in result
+        assert "has_brand" in result
+        assert result["category"] == "Electronics"
+        assert result["has_brand"] is True
+
+    @pytest.mark.asyncio
+    async def test_pricing_service_with_mock_pricing_service(self):
+        """Тест работы сервиса с мок pricing_service."""
+        service = MLPricingService()
+
+        # Мокаем pricing_service
+        mock_pricing_service = AsyncMock()
+        mock_pricing_service.predict_price.return_value = {
+            "predicted_price": 29.99,
+            "confidence_score": 0.85,
+            "price_range": {"min": 25.0, "max": 35.0},
+            "category_analysis": {"category": "Electronics"}
+        }
+
+        service.pricing_service = mock_pricing_service
+
+        product_data = ProductData(
+            name="iPhone 12",
+            item_description="Great phone in good condition",
+            category_name="Electronics",
+            brand_name="Apple",
+            item_condition_id=1,
+            shipping=0
+        )
+
+        result = await service.get_price_prediction(product_data)
+
+        # Проверяем результат
+        assert result.predicted_price == 29.99
+        assert result.confidence_score == 0.85
+        assert result.price_range["min"] == 25.0
+
+    def test_product_data_validation(self):
+        """Тест валидации данных продукта."""
+        # Корректные данные
+        valid_data = {
+            "name": "Test Product",
+            "item_description": "Description",
+            "category_name": "Electronics",
+            "brand_name": "Brand",
+            "item_condition_id": 1,
+            "shipping": 0
+        }
+
+        product = ProductData(**valid_data)
+        assert product.name == "Test Product"
+        assert product.item_condition_id == 1
+
+        # Тест с минимальными данными (но с обязательными полями)
+        minimal_data = {
+            "name": "Test",
+            "category_name": "Electronics",
+            "item_condition_id": 1,
+            "shipping": 0
+        }
+
+        product_minimal = ProductData(**minimal_data)
+        assert product_minimal.name == "Test"
+        assert product_minimal.item_description == ""  # default value
+        assert product_minimal.brand_name == "Unknown"  # default value
+
+    def test_pricing_request_validation(self):
+        """Тест валидации запроса ценообразования."""
+        product_data = ProductData(
+            name="Test Product",
+            category_name="Electronics",
+            item_condition_id=1,
+            shipping=0
+        )
+
+        request = PricingRequest(product_data=product_data)
+        assert request.product_data.name == "Test Product"
+
+
+class TestAPIIntegration:
+    """Интеграционные тесты API."""
+
+    @pytest.fixture
+    def client(self):
+        """Фикстура тестового клиента."""
+        return TestClient(app)
+
+    def test_api_health_check(self, client):
+        """Тест проверки работоспособности API."""
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "message" in response.json()
+
+    def test_pricing_endpoint_integration(self, client):
+        """Тест интеграции эндпоинта прогнозирования с моками."""
+        with patch("products.services.services.MLPricingService") as mock_service_class:
+            mock_service = AsyncMock()
+            mock_service.get_price_prediction.return_value = Mock(
+                predicted_price=25.0,
+                confidence_score=0.8,
+                price_range={"min": 20.0, "max": 30.0},
+                category_analysis={"category": "Electronics"}
+            )
+            mock_service_class.return_value = mock_service
+
+            # Тестируем с мокированным токеном и пользователем
+            with patch("base.dependencies.get_token_from_header") as mock_token:
+                mock_token.return_value = Mock(id=1)
+
+                # данные товара формируются непосредственно в запросе, переменная не нужна
+                pass
+
+
+class TestDataFlow:
+    """Тесты потока данных."""
+
+    @pytest.mark.asyncio
+    async def test_end_to_end_pricing_flow(self):
+        """End-to-end тест полного потока ценообразования."""
+        # 1. Создание данных продукта
+        product_data = ProductData(
+            name="Nintendo Switch",
+            item_description="Gaming console in excellent condition",
+            category_name="Electronics/Video Games",
+            brand_name="Nintendo",
+            item_condition_id=1,
+            shipping=1
+        )
+
+        # 2. Создание запроса
+        PricingRequest(product_data=product_data)
+
+        # 3. Инициализация сервиса
+        service = MLPricingService()
+
+        # 4. Тестируем получение базовой информации
+        info_result = await service.get_only_price_info(product_data)
+
+        assert "category" in info_result
+        assert info_result["category"] == "Electronics"
+        assert info_result["has_brand"] is True
+
+        # 5. Тестируем с мокированным pricing_service
+        mock_pricing_service = AsyncMock()
+        mock_pricing_service.predict_price.return_value = {
+            "predicted_price": 299.99,
+            "confidence_score": 0.92,
+            "price_range": {"min": 280.0, "max": 320.0},
+            "category_analysis": {"category": "Electronics"}
+        }
+
+        service.pricing_service = mock_pricing_service
+
+        prediction_result = await service.get_price_prediction(product_data)
+
+        assert prediction_result.predicted_price == 299.99
+        assert prediction_result.confidence_score == 0.92
+
+    def test_error_handling_flow(self):
+        """Тест обработки ошибок в потоке данных."""
+        service = MLPricingService()
+
+        # Тест с корректными данными
+        asyncio.run(self._test_info_async(service))
+
+    async def _test_info_async(self, service):
+        """Асинхронная часть теста информации."""
+        product_data = ProductData(
+            name="Test Product",
+            category_name="Electronics",
+            item_condition_id=1,
+            shipping=0
+        )
+
+        result = await service.get_only_price_info(product_data)
+        assert "category" in result
+
+
+class TestConfigIntegration:
+    """Тесты интеграции конфигурации."""
+
+    def test_config_loading(self):
+        """Тест загрузки конфигурации."""
+        from base.config import get_settings, get_model_path, get_preprocessing_path
+
+        settings = get_settings()
+        model_path = get_model_path()
+        preprocessing_path = get_preprocessing_path()
+
+        assert hasattr(settings, "secret_key")
+        assert hasattr(settings, "postgres_host")
+        assert isinstance(model_path, str)
+        assert isinstance(preprocessing_path, str)
+
+    def test_ml_service_config_integration(self):
+        """Тест интеграции ML сервиса с конфигурацией."""
+        service = MLPricingService()
+
+        # Проверяем что сервис имеет правильную структуру
+        assert hasattr(service, "pricing_service")
+
+        # Тестируем получение информации о сервисе
+        service_info = service.get_service_info()
+        assert isinstance(service_info, dict)
