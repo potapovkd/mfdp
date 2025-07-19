@@ -1,9 +1,7 @@
 """Модуль для единицы работы (Unit of Work) товаров."""
 
 import abc
-
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from products.adapters.repositories import (
     ProductAbstractDatabaseRepository,
@@ -36,17 +34,17 @@ class ProductAbstractUnitOfWork(abc.ABC):
         """Откат транзакции."""
 
 
-class ProductSqlAlchemyUnitOfWork(ProductAbstractUnitOfWork):
-    """UoW для SQLAlchemy."""
+class PostgreSQLProductUnitOfWork(ProductAbstractUnitOfWork):
+    """UoW для PostgreSQL."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self.session_factory = session_factory
 
     @property
     def products(self) -> ProductAbstractDatabaseRepository:
         return ProductSqlAlchemyDatabaseRepository(self._session)
 
-    async def __aenter__(self) -> "ProductSqlAlchemyUnitOfWork":
+    async def __aenter__(self) -> "PostgreSQLProductUnitOfWork":
         """Инициализация UoW через менеджер контекста."""
         self._session: AsyncSession = self.session_factory()
         return self
@@ -65,4 +63,5 @@ class ProductSqlAlchemyUnitOfWork(ProductAbstractUnitOfWork):
         await self._session.rollback()
 
 
-# All deprecated aliases removed after migration
+# Alias for backward compatibility
+ProductSqlAlchemyUnitOfWork = PostgreSQLProductUnitOfWork

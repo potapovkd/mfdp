@@ -1,16 +1,28 @@
-"""Unit of Work для пользователей."""
+"""Unit of Work для работы с пользователями."""
 
-import abc
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+if TYPE_CHECKING:
+    from users.adapters.repositories import IUserRepository
+else:
+    from users.adapters.repositories import IUserRepository
 
-from users.adapters.repositories import IUserRepository, PostgreSQLUserRepository
 
-
-class IUserUnitOfWork(abc.ABC):
+class IUserUnitOfWork(ABC):
     """Интерфейс Unit of Work для пользователей."""
 
     users: IUserRepository
+
+    @abstractmethod
+    async def commit(self) -> None:
+        """Фиксация изменений."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def rollback(self) -> None:
+        """Откат изменений."""
+        raise NotImplementedError
 
     async def __aenter__(self):
         """Вход в контекст."""
@@ -18,17 +30,29 @@ class IUserUnitOfWork(abc.ABC):
 
     async def __aexit__(self, *args):
         """Выход из контекста."""
-        await self.rollback()
+        pass
 
-    @abc.abstractmethod
+
+class InMemoryUserUnitOfWork(IUserUnitOfWork):
+    """In-memory Unit of Work для пользователей."""
+
+    def __init__(self):
+        """Инициализация."""
+        from users.adapters.repository_impl import InMemoryUserRepository
+        self.users = InMemoryUserRepository()
+
     async def commit(self):
         """Фиксация изменений."""
-        raise NotImplementedError
+        pass
 
-    @abc.abstractmethod
     async def rollback(self):
         """Откат изменений."""
-        raise NotImplementedError
+        pass
+
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from users.adapters.repository_impl import PostgreSQLUserRepository
 
 
 class PostgreSQLUserUnitOfWork(IUserUnitOfWork):

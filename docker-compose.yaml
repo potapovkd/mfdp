@@ -48,23 +48,33 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
+      # Database settings
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: pricing_optimization
       DB_USER: pricing_user
       DB_PASSWORD: pricing_password
+      
+      # Security settings
       SECRET_KEY: super-secret-key-for-pricing-optimization-2024
-      ALLOWED_HOSTS: "*"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
       API_PREFIX: "/api/v1"
       ACCESS_TOKEN_EXPIRES_MINUTES: 60
       REFRESH_TOKEN_EXPIRES_HOURS: 24
+      
       # ML Model settings
       MODEL_PATH: "models/catboost_pricing_model.cbm"
       PREPROCESSING_PATH: "models/preprocessing_pipeline.pkl"
       CONFIDENCE_THRESHOLD: "0.7"
       MAX_PRICE_LIMIT: "10000.0"
       MIN_PRICE_LIMIT: "0.1"
-      REQUEST_PRICE: "5.0"
+      
+      # Billing and Tariffs
+      SINGLE_ITEM_PRICE: "5.00"
+      BULK_DISCOUNT_THRESHOLD: "10"
+      BULK_DISCOUNT_PERCENT: "20"
+      MAX_ITEMS_PER_REQUEST: "100"
+      
       # ML Worker scaling settings
       REDIS_HOST: "redis"
       REDIS_PORT: "6379" 
