@@ -383,8 +383,68 @@ elif page == "Прогнозирование цены":
                             st.write(f"**Рекомендация:** {analysis.get('recommendation', 'N/A')}")
                             st.write(f"**Позиция на рынке:** {analysis.get('market_position', 'N/A')}")
 
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 402:
+                            # Красивая обработка ошибки недостаточного баланса
+                            st.error("💳 Недостаточно средств на балансе!")
+                            
+                            # Получаем текущий баланс
+                            try:
+                                balance_response = requests.get(f"{API_BASE_URL}/users/balance/", headers=headers)
+                                balance_response.raise_for_status()
+                                balance_data = balance_response.json()
+                                
+                                # Проверяем, что баланс существует и является числом
+                                if 'balance' not in balance_data:
+                                    raise ValueError("Баланс не найден в ответе сервера")
+                                
+                                try:
+                                    current_balance = float(balance_data['balance'])
+                                except (ValueError, TypeError):
+                                    raise ValueError(f"Некорректное значение баланса: {balance_data['balance']}")
+                                
+                                # Получаем информацию о тарифах
+                                tariffs_response = requests.get(f"{API_BASE_URL}/users/tariffs/", headers=headers)
+                                tariffs_response.raise_for_status()
+                                tariffs_data = tariffs_response.json()
+                                
+                                # Проверяем, что тариф существует и является числом
+                                if 'single_item_price' not in tariffs_data:
+                                    raise ValueError("Тариф не найден в ответе сервера")
+                                
+                                try:
+                                    required_amount = float(tariffs_data['single_item_price'])
+                                except (ValueError, TypeError):
+                                    raise ValueError(f"Некорректное значение тарифа: {tariffs_data['single_item_price']}")
+                                
+                                deficit = required_amount - current_balance
+                                
+                                # Создаем красивый блок с информацией
+                                st.warning(f"""
+                                **💰 Текущий баланс:** ${current_balance:.2f}
+                                
+                                **📊 Стоимость прогнозирования:** ${required_amount:.2f}
+                                
+                                **💡 Для продолжения пополните баланс на:** ${deficit:.2f}
+                                """)
+                                
+                                # Кнопки действий
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if st.button("💵 Пополнить баланс", key="go_to_balance_single"):
+                                        st.switch_page("Баланс и тарифы")
+                                with col2:
+                                    if st.button("🔄 Обновить баланс", key="refresh_balance_single"):
+                                        st.rerun()
+                                        
+                            except Exception as balance_error:
+                                st.error(f"❌ Не удалось получить информацию о балансе: {balance_error}")
+                                st.info("💡 Попробуйте обновить страницу или перейти в раздел 'Баланс и тарифы'")
+                                st.info("🔧 Если проблема повторяется, обратитесь в поддержку")
+                        else:
+                            st.error(f"❌ Ошибка сервера: {e}")
                     except Exception as e:
-                        st.error(f"❌ Ошибка: {e}")
+                        st.error(f"❌ Неожиданная ошибка: {e}")
                 else:
                     st.warning("⚠️ Заполните обязательные поля")
 
@@ -446,13 +506,15 @@ elif page == "Прогнозирование цены":
                                 st.divider()
                         
                         # Кнопка экспорта
+                        st.info("💾 Подготовка файла для экспорта...")
                         try:
-                            export_response = requests.post(
-                                f"{API_BASE_URL}/products/pricing/export-results/",
-                                json=result['results'],
-                                headers=headers
-                            )
-                            export_response.raise_for_status()
+                            with st.spinner("Создаю Excel файл..."):
+                                export_response = requests.post(
+                                    f"{API_BASE_URL}/products/pricing/export-results/",
+                                    json=result['results'],
+                                    headers=headers
+                                )
+                                export_response.raise_for_status()
                             
                             filename = f"price_predictions_{len(product_ids)}_items.xlsx"
                             st.download_button(
@@ -462,11 +524,77 @@ elif page == "Прогнозирование цены":
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 help="Скачайте результаты прогнозирования в Excel"
                             )
+                        except requests.exceptions.HTTPError as e:
+                            if e.response.status_code == 500:
+                                st.error("❌ Ошибка сервера при экспорте")
+                                st.info("💡 Файл не был создан. Попробуйте позже или обратитесь в поддержку.")
+                            else:
+                                st.error(f"❌ Ошибка экспорта: {e}")
                         except Exception as e:
-                            st.error(f"❌ Ошибка экспорта: {e}")
+                            st.error(f"❌ Неожиданная ошибка экспорта: {e}")
+                            st.info("💡 Попробуйте обновить страницу и повторить экспорт.")
                                 
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 402:
+                            # Красивая обработка ошибки недостаточного баланса
+                            st.error("💳 Недостаточно средств на балансе!")
+                            
+                            # Получаем текущий баланс
+                            try:
+                                balance_response = requests.get(f"{API_BASE_URL}/users/balance/", headers=headers)
+                                balance_response.raise_for_status()
+                                balance_data = balance_response.json()
+                                
+                                # Проверяем, что баланс существует и является числом
+                                if 'balance' not in balance_data:
+                                    raise ValueError("Баланс не найден в ответе сервера")
+                                
+                                try:
+                                    current_balance = float(balance_data['balance'])
+                                except (ValueError, TypeError):
+                                    raise ValueError(f"Некорректное значение баланса: {balance_data['balance']}")
+                                
+                                # Получаем информацию о тарифах
+                                tariffs_response = requests.get(f"{API_BASE_URL}/users/tariffs/", headers=headers)
+                                tariffs_response.raise_for_status()
+                                tariffs_data = tariffs_response.json()
+                                
+                                # Проверяем, что тариф существует и является числом
+                                if 'single_item_price' not in tariffs_data:
+                                    raise ValueError("Тариф не найден в ответе сервера")
+                                
+                                try:
+                                    required_amount = len(product_ids) * float(tariffs_data['single_item_price'])
+                                except (ValueError, TypeError):
+                                    raise ValueError(f"Некорректное значение тарифа: {tariffs_data['single_item_price']}")
+                                
+                                deficit = required_amount - current_balance
+                                
+                                # Создаем красивый блок с информацией
+                                st.warning(f"""
+                                **💰 Текущий баланс:** ${current_balance:.2f}
+                                
+                                **📊 Стоимость прогнозирования:** ${required_amount:.2f}
+                                
+                                **💡 Для продолжения пополните баланс на:** ${deficit:.2f}
+                                """)
+                                
+                                # Кнопки действий
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if st.button("💵 Пополнить баланс", key="go_to_balance_multiple"):
+                                        st.switch_page("Баланс и тарифы")
+                                with col2:
+                                    if st.button("🔄 Обновить баланс", key="refresh_balance_multiple"):
+                                        st.rerun()
+                                        
+                            except Exception as balance_error:
+                                st.error(f"❌ Не удалось получить информацию о балансе: {balance_error}")
+                                st.info("💡 Попробуйте обновить страницу или перейти в раздел 'Баланс и тарифы'")
+                        else:
+                            st.error(f"❌ Ошибка сервера: {e}")
                     except Exception as e:
-                        st.error(f"❌ Ошибка: {e}")
+                        st.error(f"❌ Неожиданная ошибка: {e}")
         else:
             st.info("📝 У вас пока нет товаров. Добавьте товары в разделе 'Товары'")
 
@@ -482,77 +610,197 @@ elif page == "Анализ цен":
 
     st.info("💡 Анализ ценовых характеристик товара (бесплатно)")
 
-    with st.form("analyze_price"):
-        name = st.text_input("Название товара*:")
-        description = st.text_area("Описание товара:")
-        category = st.selectbox("Категория:", [
-            "Electronics", "Fashion", "Home & Garden", "Books", "Sports & Outdoors",
-            "Beauty", "Kids & Baby", "Automotive", "Other"
-        ])
-        brand = st.text_input("Бренд:", value="Unknown")
-        condition = st.slider("Состояние (1=новый, 5=плохое):", 1, 5, 1)
-        shipping = st.radio("Кто платит за доставку:", ["Покупатель", "Продавец"])
+    # Загружаем товары пользователя если еще не загружены
+    if "user_products" not in st.session_state:
+        try:
+            response = requests.get(f"{API_BASE_URL}/products/", headers=headers)
+            response.raise_for_status()
+            st.session_state.user_products = response.json()
+        except Exception as e:
+            st.error(f"❌ Ошибка загрузки товаров: {e}")
+            st.session_state.user_products = []
 
-        if st.form_submit_button("📊 Анализировать товар"):
-            if name and category:
+    # Создаем вкладки для разных способов анализа
+    tab1, tab2 = st.tabs(["Анализ существующего товара", "Анализ нового товара"])
+
+    with tab1:
+        st.subheader("📦 Анализ вашего товара")
+        
+        # Кнопка для обновления списка товаров
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔄 Обновить список товаров"):
                 try:
-                    product_data = {
-                        "name": name,
-                        "item_description": description,
-                        "category_name": category,
-                        "brand_name": brand,
-                        "item_condition_id": condition,
-                        "shipping": 1 if shipping == "Продавец" else 0
-                    }
-
-                    with st.spinner("Анализирую товар..."):
-                        response = requests.post(
-                            f"{API_BASE_URL}/products/pricing/analyze/",
-                            json={"product_data": product_data},
-                            headers=headers
-                        )
-                        response.raise_for_status()
-                        result = response.json()
-
-                    st.success("✅ Анализ готов!")
-
-                    # Показываем результаты анализа
-                    if "features" in result:
-                        st.subheader("🔍 Анализ признаков")
-                        features = result["features"]
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write("**Текстовые признаки:**")
-                            st.write(f"• Длина названия: {features.get('name_length', 0)} символов")
-                            st.write(f"• Длина описания: {features.get('description_length', 0)} символов")
-                            st.write(f"• Количество слов в названии: {features.get('name_words', 0)}")
-                            st.write(f"• Количество слов в описании: {features.get('description_words', 0)}")
-                        
-                        with col2:
-                            st.write("**Категориальные признаки:**")
-                            st.write(f"• Категория: {features.get('category', 'N/A')}")
-                            st.write(f"• Бренд: {features.get('brand', 'N/A')}")
-                            st.write(f"• Состояние: {features.get('condition_text', 'N/A')}")
-                            st.write(f"• Доставка: {'Продавец платит' if features.get('shipping', 0) == 1 else 'Покупатель платит'}")
-
-                    if "category_analysis" in result:
-                        st.subheader("📊 Анализ категории")
-                        category_analysis = result["category_analysis"]
-                        st.write(f"**Диапазон цен:** {category_analysis.get('price_range', 'N/A')}")
-                        st.write(f"**Ключевые факторы:** {', '.join(category_analysis.get('key_factors', []))}")
-                        st.write(f"**Совет:** {category_analysis.get('tips', 'N/A')}")
-
-                    if "recommendations" in result:
-                        st.subheader("💡 Рекомендации")
-                        recommendations = result["recommendations"]
-                        for rec in recommendations:
-                            st.write(f"• {rec}")
-
+                    response = requests.get(f"{API_BASE_URL}/products/", headers=headers)
+                    response.raise_for_status()
+                    st.session_state.user_products = response.json()
+                    st.success("✅ Список товаров обновлен!")
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"❌ Ошибка: {e}")
-            else:
-                st.warning("⚠️ Заполните обязательные поля")
+                    st.error(f"❌ Ошибка обновления: {e}")
+        
+        with col2:
+            if st.session_state.user_products:
+                st.info(f"📦 Найдено товаров: {len(st.session_state.user_products)}")
+        
+        if st.session_state.user_products:
+            # Создаем список товаров для выбора
+            product_options = {f"{p['name']} | {p['category_name']} | {p['brand_name']} (ID: {p['id']})": p for p in st.session_state.user_products}
+            
+            selected_product_name = st.selectbox(
+                "Выберите товар для анализа:",
+                options=[""] + list(product_options.keys()),
+                help="Выберите один из ваших товаров для анализа"
+            )
+            
+            if selected_product_name:
+                selected_product = product_options[selected_product_name]
+                
+                # Показываем информацию о выбранном товаре
+                st.info(f"**Выбранный товар:** {selected_product['name']}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Категория:** {selected_product['category_name']}")
+                    st.write(f"**Бренд:** {selected_product['brand_name']}")
+                with col2:
+                    st.write(f"**Состояние:** {selected_product['item_condition_id']}/5")
+                    st.write(f"**Доставка:** {'Продавец платит' if selected_product['shipping'] == 1 else 'Покупатель платит'}")
+                
+                if st.button("📊 Анализировать выбранный товар"):
+                    try:
+                        product_data = {
+                            "name": selected_product['name'],
+                            "item_description": selected_product['item_description'],
+                            "category_name": selected_product['category_name'],
+                            "brand_name": selected_product['brand_name'],
+                            "item_condition_id": selected_product['item_condition_id'],
+                            "shipping": selected_product['shipping']
+                        }
+
+                        with st.spinner("Анализирую товар..."):
+                            response = requests.post(
+                                f"{API_BASE_URL}/products/pricing/analyze/",
+                                json={"product_data": product_data},
+                                headers=headers
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+
+                        st.success("✅ Анализ готов!")
+
+                        # Показываем результаты анализа
+                        if "features" in result:
+                            st.subheader("🔍 Анализ признаков")
+                            features = result["features"]
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write("**Текстовые признаки:**")
+                                st.write(f"• Длина названия: {features.get('name_length', 0)} символов")
+                                st.write(f"• Длина описания: {features.get('description_length', 0)} символов")
+                                st.write(f"• Количество слов в названии: {features.get('name_words', 0)}")
+                                st.write(f"• Количество слов в описании: {features.get('description_words', 0)}")
+                            
+                            with col2:
+                                st.write("**Категориальные признаки:**")
+                                st.write(f"• Категория: {features.get('category', 'N/A')}")
+                                st.write(f"• Бренд: {features.get('brand', 'N/A')}")
+                                st.write(f"• Состояние: {features.get('condition_text', 'N/A')}")
+                                st.write(f"• Доставка: {'Продавец платит' if features.get('shipping', 0) == 1 else 'Покупатель платит'}")
+
+                        if "category_analysis" in result:
+                            st.subheader("📊 Анализ категории")
+                            category_analysis = result["category_analysis"]
+                            st.write(f"**Диапазон цен:** {category_analysis.get('price_range', 'N/A')}")
+                            st.write(f"**Ключевые факторы:** {', '.join(category_analysis.get('key_factors', []))}")
+                            st.write(f"**Совет:** {category_analysis.get('tips', 'N/A')}")
+
+                        if "recommendations" in result:
+                            st.subheader("💡 Рекомендации")
+                            recommendations = result["recommendations"]
+                            for rec in recommendations:
+                                st.write(f"• {rec}")
+
+                    except Exception as e:
+                        st.error(f"❌ Ошибка: {e}")
+        else:
+            st.info("📝 У вас пока нет товаров. Добавьте товары в разделе 'Товары' или используйте вкладку 'Анализ нового товара'")
+
+    with tab2:
+        st.subheader("🆕 Анализ нового товара")
+        
+        with st.form("analyze_new_price"):
+            name = st.text_input("Название товара*:")
+            description = st.text_area("Описание товара:")
+            category = st.selectbox("Категория:", [
+                "Electronics", "Fashion", "Home & Garden", "Books", "Sports & Outdoors",
+                "Beauty", "Kids & Baby", "Automotive", "Other"
+            ])
+            brand = st.text_input("Бренд:", value="Unknown")
+            condition = st.slider("Состояние (1=новый, 5=плохое):", 1, 5, 1)
+            shipping = st.radio("Кто платит за доставку:", ["Покупатель", "Продавец"])
+
+            if st.form_submit_button("📊 Анализировать товар"):
+                if name and category:
+                    try:
+                        product_data = {
+                            "name": name,
+                            "item_description": description,
+                            "category_name": category,
+                            "brand_name": brand,
+                            "item_condition_id": condition,
+                            "shipping": 1 if shipping == "Продавец" else 0
+                        }
+
+                        with st.spinner("Анализирую товар..."):
+                            response = requests.post(
+                                f"{API_BASE_URL}/products/pricing/analyze/",
+                                json={"product_data": product_data},
+                                headers=headers
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+
+                        st.success("✅ Анализ готов!")
+
+                        # Показываем результаты анализа
+                        if "features" in result:
+                            st.subheader("🔍 Анализ признаков")
+                            features = result["features"]
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write("**Текстовые признаки:**")
+                                st.write(f"• Длина названия: {features.get('name_length', 0)} символов")
+                                st.write(f"• Длина описания: {features.get('description_length', 0)} символов")
+                                st.write(f"• Количество слов в названии: {features.get('name_words', 0)}")
+                                st.write(f"• Количество слов в описании: {features.get('description_words', 0)}")
+                            
+                            with col2:
+                                st.write("**Категориальные признаки:**")
+                                st.write(f"• Категория: {features.get('category', 'N/A')}")
+                                st.write(f"• Бренд: {features.get('brand', 'N/A')}")
+                                st.write(f"• Состояние: {features.get('condition_text', 'N/A')}")
+                                st.write(f"• Доставка: {'Продавец платит' if features.get('shipping', 0) == 1 else 'Покупатель платит'}")
+
+                        if "category_analysis" in result:
+                            st.subheader("📊 Анализ категории")
+                            category_analysis = result["category_analysis"]
+                            st.write(f"**Диапазон цен:** {category_analysis.get('price_range', 'N/A')}")
+                            st.write(f"**Ключевые факторы:** {', '.join(category_analysis.get('key_factors', []))}")
+                            st.write(f"**Совет:** {category_analysis.get('tips', 'N/A')}")
+
+                        if "recommendations" in result:
+                            st.subheader("💡 Рекомендации")
+                            recommendations = result["recommendations"]
+                            for rec in recommendations:
+                                st.write(f"• {rec}")
+
+                    except Exception as e:
+                        st.error(f"❌ Ошибка: {e}")
+                else:
+                    st.warning("⚠️ Заполните обязательные поля")
 
 # === ФУТЕР ===
 st.markdown("---")

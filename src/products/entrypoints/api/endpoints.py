@@ -3,6 +3,8 @@
 import logging
 import pandas as pd
 import io
+import tempfile
+import os
 from decimal import Decimal
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
@@ -232,22 +234,51 @@ async def export_pricing_results(
         # Создаем DataFrame с результатами
         export_data = []
         for result in results:
-            product_info = result.get("product_info", {})
-            prediction = result.get("prediction", {})
-            
-            export_data.append({
-                "Product ID": product_info.get("id", ""),
-                "Product Name": product_info.get("name", ""),
-                "Category": product_info.get("category_name", ""),
-                "Brand": product_info.get("brand_name", ""),
-                "Condition": product_info.get("item_condition_id", ""),
-                "Shipping": "Seller pays" if product_info.get("shipping", 0) == 1 else "Buyer pays",
-                "Predicted Price": prediction.get("predicted_price", ""),
-                "Confidence Score": f"{prediction.get('confidence_score', 0):.1%}",
-                "Price Range Min": prediction.get("price_range", {}).get("min", ""),
-                "Price Range Max": prediction.get("price_range", {}).get("max", ""),
-                "Category Analysis": prediction.get("category_analysis", {}).get("recommendation", "")
-            })
+            try:
+                # Получаем данные из структуры, возвращаемой predict-multiple
+                product_id = result.get("product_id", "")
+                product_name = result.get("product_name", "")
+                prediction = result.get("prediction", {})
+                
+                # Извлекаем данные из prediction с проверкой типов
+                predicted_price = prediction.get("predicted_price", 0)
+                if isinstance(predicted_price, str):
+                    try:
+                        predicted_price = float(predicted_price)
+                    except (ValueError, TypeError):
+                        predicted_price = 0
+                
+                confidence_score = prediction.get("confidence_score", 0)
+                if isinstance(confidence_score, str):
+                    try:
+                        confidence_score = float(confidence_score)
+                    except (ValueError, TypeError):
+                        confidence_score = 0
+                
+                price_range = prediction.get("price_range", {})
+                category_analysis = prediction.get("category_analysis", {})
+                
+                export_data.append({
+                    "Product ID": str(product_id),
+                    "Product Name": str(product_name),
+                    "Predicted Price": f"${predicted_price:.2f}" if predicted_price else "$0.00",
+                    "Confidence Score": f"{confidence_score:.1%}" if confidence_score else "0%",
+                    "Price Range Min": f"${price_range.get('min', 0):.2f}" if price_range.get('min') else "$0.00",
+                    "Price Range Max": f"${price_range.get('max', 0):.2f}" if price_range.get('max') else "$0.00",
+                    "Category Analysis": str(category_analysis.get("recommendation", ""))
+                })
+            except Exception as e:
+                logger.error(f"Error processing result for export: {e}")
+                # Добавляем пустую строку в случае ошибки
+                export_data.append({
+                    "Product ID": "Error",
+                    "Product Name": "Error",
+                    "Predicted Price": "$0.00",
+                    "Confidence Score": "0%",
+                    "Price Range Min": "$0.00",
+                    "Price Range Max": "$0.00",
+                    "Category Analysis": "Error processing data"
+                })
         
         df = pd.DataFrame(export_data)
         
@@ -257,23 +288,61 @@ async def export_pricing_results(
             df.to_excel(writer, sheet_name='Price Predictions', index=False)
             
             # Добавляем сводку
-            summary_data = {
-                "Metric": ["Total Products", "Average Price", "Total Cost"],
-                "Value": [
-                    len(results),
-                    f"${df['Predicted Price'].mean():.2f}" if len(df) > 0 else "$0.00",
-                    f"${len(results) * 5.00:.2f}"  # $5 per prediction
-                ]
-            }
+            try:
+                # Извлекаем числовые значения цен для расчета среднего
+                prices = []
+                for row in export_data:
+                    price_str = row.get("Predicted Price", "$0.00")
+                    if price_str.startswith("$"):
+                        try:
+                            price = float(price_str.replace("$", ""))
+                            prices.append(price)
+                        except (ValueError, TypeError):
+                            continue
+                
+                avg_price = sum(prices) / len(prices) if prices else 0
+                
+                summary_data = {
+                    "Metric": ["Total Products", "Average Price", "Total Cost"],
+                    "Value": [
+                        len(results),
+                        f"${avg_price:.2f}",
+                        f"${len(results) * 5.00:.2f}"  # $5 per prediction
+                    ]
+                }
+            except Exception as e:
+                logger.error(f"Error calculating summary: {e}")
+                summary_data = {
+                    "Metric": ["Total Products", "Average Price", "Total Cost"],
+                    "Value": [
+                        len(results),
+                        "$0.00",
+                        f"${len(results) * 5.00:.2f}"
+                    ]
+                }
             summary_df = pd.DataFrame(summary_data)
             summary_df.to_excel(writer, sheet_name='Summary', index=False)
         
         output.seek(0)
         
+        # Создаем временный файл
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+            tmp_file.write(output.getvalue())
+            tmp_file_path = tmp_file.name
+        
+        # Создаем функцию для очистки файла после отправки
+        def cleanup_file():
+            try:
+                if os.path.exists(tmp_file_path):
+                    os.unlink(tmp_file_path)
+            except Exception as e:
+                logger.error(f"Error cleaning up temp file {tmp_file_path}: {e}")
+        
         return FileResponse(
-            output,
+            tmp_file_path,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename=f"price_predictions_{data_from_token.id}.xlsx"
+            filename=f"price_predictions_{data_from_token.id}.xlsx",
+            background=cleanup_file
         )
         
     except Exception as e:
