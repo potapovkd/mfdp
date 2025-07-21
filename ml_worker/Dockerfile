@@ -8,12 +8,13 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Копирование requirements
+# Копируем только нужные файлы и директории
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Копирование кода
-COPY . .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY worker.py .
+COPY logs/ logs/
+COPY docker-compose.workers.yaml .
+COPY __pycache__/ __pycache__/
 
 # Создание директории для моделей
 RUN mkdir -p /app/models

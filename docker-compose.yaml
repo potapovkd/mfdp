@@ -88,6 +88,7 @@ services:
       ML_WORKER_TIMEOUT: "30"
     volumes:
       - ./models:/app/models:ro  # Mount trained models
+      - ./src:/app/src
     depends_on:
       - db
       - redis
@@ -101,8 +102,12 @@ services:
     build:
       context: webui/
       dockerfile: Dockerfile
+    env_file:
+      - ../.env
     environment:
       API_BASE_URL: http://api:8000/api/v1
+    volumes:
+      - ./webui:/webui
     depends_on:
       - api
     ports:

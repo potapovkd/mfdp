@@ -71,56 +71,62 @@ class ScalableMLWorker:
         logger.info(f"ML Worker {self.worker_id} initialized successfully")
 
     def _setup_connections(self):
-        """Настройка подключений к Redis и RabbitMQ."""
-        try:
-            # Redis для очередей задач
-            redis_host = os.getenv("REDIS_HOST", "redis")
-            redis_port = int(os.getenv("REDIS_PORT", "6379"))
-            redis_db = int(os.getenv("REDIS_DB", "0"))
+        """Настройка подключений к Redis и RabbitMQ с retry."""
+        import time
+        max_retries = 10
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Redis для очередей задач
+                redis_host = os.getenv("REDIS_HOST", "redis")
+                redis_port = int(os.getenv("REDIS_PORT", "6379"))
+                redis_db = int(os.getenv("REDIS_DB", "0"))
 
-            self.redis_client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
-                db=redis_db,
-                decode_responses=True,
-                socket_connect_timeout=10,
-                socket_timeout=10
-            )
-
-            # Тест соединения
-            self.redis_client.ping()
-            logger.info(f"Connected to Redis at {redis_host}:{redis_port}")
-
-            # RabbitMQ для результатов
-            rabbitmq_host = os.getenv("RABBITMQ_HOST", "rabbitmq")
-            rabbitmq_port = int(os.getenv("RABBITMQ_PORT", "5672"))
-            rabbitmq_user = os.getenv("RABBITMQ_USER", "pricing")
-            rabbitmq_pass = os.getenv("RABBITMQ_PASS", "pricing123")
-
-            credentials = pika.PlainCredentials(rabbitmq_user, rabbitmq_pass)
-            self.rabbitmq_connection = pika.BlockingConnection(
-                pika.ConnectionParameters(
-                    host=rabbitmq_host,
-                    port=rabbitmq_port,
-                    credentials=credentials,
-                    heartbeat=600,
-                    blocked_connection_timeout=300
+                self.redis_client = redis.Redis(
+                    host=redis_host,
+                    port=redis_port,
+                    db=redis_db,
+                    decode_responses=True,
+                    socket_connect_timeout=10,
+                    socket_timeout=10
                 )
-            )
-            self.rabbitmq_channel = self.rabbitmq_connection.channel()
 
-            # Объявляем exchange для результатов
-            self.rabbitmq_channel.exchange_declare(
-                exchange="pricing_results",
-                exchange_type="direct",
-                durable=True
-            )
+                # Тест соединения
+                self.redis_client.ping()
+                logger.info(f"Connected to Redis at {redis_host}:{redis_port}")
 
-            logger.info(f"Connected to RabbitMQ at {rabbitmq_host}:{rabbitmq_port}")
+                # RabbitMQ для результатов
+                rabbitmq_host = os.getenv("RABBITMQ_HOST", "rabbitmq")
+                rabbitmq_port = int(os.getenv("RABBITMQ_PORT", "5672"))
+                rabbitmq_user = os.getenv("RABBITMQ_USER", "pricing")
+                rabbitmq_pass = os.getenv("RABBITMQ_PASS", "pricing123")
 
-        except Exception as e:
-            logger.error(f"Failed to setup connections: {e}")
-            raise
+                credentials = pika.PlainCredentials(rabbitmq_user, rabbitmq_pass)
+                self.rabbitmq_connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=rabbitmq_host,
+                        port=rabbitmq_port,
+                        credentials=credentials,
+                        heartbeat=600,
+                        blocked_connection_timeout=300
+                    )
+                )
+                self.rabbitmq_channel = self.rabbitmq_connection.channel()
+
+                # Объявляем exchange для результатов
+                self.rabbitmq_channel.exchange_declare(
+                    exchange="pricing_results",
+                    exchange_type="direct",
+                    durable=True
+                )
+
+                logger.info(f"Connected to RabbitMQ at {rabbitmq_host}:{rabbitmq_port}")
+                return  # успех, выходим из retry-цикла
+
+            except Exception as e:
+                logger.error(f"Failed to setup connections (attempt {attempt}/{max_retries}): {e}")
+                if attempt == max_retries:
+                    raise
+                time.sleep(5)  # подождать 5 секунд и попробовать снова
 
     def _load_model(self):
         """Загрузка ML модели и pipeline."""

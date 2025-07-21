@@ -19,7 +19,8 @@ page = st.sidebar.selectbox("Выберите раздел:", [
     "Баланс и тарифы",
     "Товары",
     "Прогнозирование цены",
-    "Анализ цен"
+    "Анализ цен",
+    "Промпт-дэшборд"  # Новый раздел
 ])
 
 # === АУТЕНТИФИКАЦИЯ ===
@@ -801,6 +802,78 @@ elif page == "Анализ цен":
                         st.error(f"❌ Ошибка: {e}")
                 else:
                     st.warning("⚠️ Заполните обязательные поля")
+
+# === ПРОМПТ-ДЭШБОРД ===
+elif page == "Промпт-дэшборд":
+    st.header("🤖 Промптируемый дашборд (AI)")
+    import plotly.graph_objects as go
+    from typing import List
+    import logging
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    try:
+        from smolagents import CodeAgent, InferenceClientModel
+        from dashboards.sql_tool import sql_engine
+        from dashboards.services import create_plotly_html
+        st.success("Импорты smolagents, sql_engine и create_plotly_html прошли успешно!")
+    except Exception as e:
+        import traceback
+        st.error(f"Ошибка импорта smolagents/sql_engine: {e}\n{traceback.format_exc()}")
+        st.stop()
+    print(os.getenv("HF_API_TOKEN"))
+    # --- Агент ---
+    def get_agent():
+        # Добавляем sql_engine tool
+        return CodeAgent(
+            tools=[sql_engine],
+            model=InferenceClientModel(
+                model_id="Qwen/Qwen2.5-Coder-32B-Instruct",
+                token=os.getenv("HF_API_TOKEN")
+            ),
+            additional_authorized_imports=["pandas", "plotly", "io"],
+        )
+
+    if "prompt_dashboard_figures" not in st.session_state:
+        st.session_state.prompt_dashboard_figures = []
+
+    tab1, tab2 = st.tabs(["AI-промпт", "Дашборд"])
+
+    with tab1:
+        st.subheader("Сгенерируйте график по промпту")
+        user_prompt = st.text_area("Введите запрос к AI-агенту (например: 'Построй гистограмму по продажам за месяц')", height=100)
+        if st.button("Сгенерировать график", key="generate_ai_figure"):
+            if user_prompt.strip():
+                agent = get_agent()
+                try:
+                    with st.spinner("Генерирую график через smolagents..."):
+                        result = agent.run(user_prompt)
+                except Exception as e:
+                    import traceback
+                    st.error(f"Ошибка при вызове агента: {e}\n{traceback.format_exc()}")
+                    st.stop()
+                if isinstance(result, go.Figure):
+                    st.session_state.last_ai_figure = result
+                    st.success("График сгенерирован!")
+                else:
+                    st.session_state.last_ai_figure = None
+                    st.info(f"Ответ агента: {result}")
+            else:
+                st.warning("Введите промпт для генерации графика.")
+        if st.session_state.get("last_ai_figure"):
+            st.plotly_chart(st.session_state.last_ai_figure, use_container_width=True)
+            if st.button("Добавить на дашборд", key="add_to_dashboard"):
+                st.session_state.prompt_dashboard_figures.append(st.session_state.last_ai_figure)
+                st.success("График добавлен на дашборд!")
+
+    with tab2:
+        st.subheader("Ваш дашборд (drag-n-drop)")
+        figures = st.session_state.prompt_dashboard_figures
+        if figures:
+            html_code = create_plotly_html(figures)
+            st.components.v1.html(html_code, height=2000, width=2300, scrolling=True)
+        else:
+            st.info("Добавьте графики через AI-промпт для отображения дашборда.")
 
 # === ФУТЕР ===
 st.markdown("---")

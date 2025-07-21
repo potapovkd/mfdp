@@ -7,9 +7,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY . .
+# Копируем только нужные файлы и директории
+COPY requirements.txt .
+COPY src/ src/
+COPY README.md .
+COPY setup.cfg .
+COPY pyproject.toml .
 
-RUN pip install --upgrade pip & pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
 ENV PYTHONPATH=/app/src
 
