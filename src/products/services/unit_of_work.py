@@ -1,6 +1,7 @@
 """Модуль для единицы работы (Unit of Work) товаров."""
 
 import abc
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from products.adapters.repositories import (

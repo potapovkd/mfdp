@@ -1,17 +1,16 @@
-"""Модуль для обучения модели ценообразования."""
+"""Модуль для обучения и версионирования ML модели ценообразования."""
 
-import logging
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from catboost import CatBoostRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +21,8 @@ class ModelMetrics:
     def __init__(self):
         """Инициализация метрик."""
         self.metrics = {
-            "train": {
-                "rmse": 0.0,
-                "mae": 0.0,
-                "r2": 0.0
-            },
-            "test": {
-                "rmse": 0.0,
-                "mae": 0.0,
-                "r2": 0.0
-            }
+            "train": {"rmse": 0.0, "mae": 0.0, "r2": 0.0},
+            "test": {"rmse": 0.0, "mae": 0.0, "r2": 0.0},
         }
         self.timestamp = datetime.now().isoformat()
         self.model_version = None
@@ -45,7 +36,7 @@ class ModelMetrics:
             "timestamp": self.timestamp,
             "model_version": self.model_version,
             "dataset_stats": self.dataset_stats,
-            "feature_importance": self.feature_importance
+            "feature_importance": self.feature_importance,
         }
 
     def save(self, path: Path) -> None:
@@ -61,7 +52,7 @@ class PricingModelTrainer:
         self,
         model_dir: str,
         model_name: str = "catboost_pricing_model",
-        version: str = None
+        version: str = None,
     ):
         """Инициализация тренера."""
         self.model_dir = Path(model_dir)
@@ -90,11 +81,7 @@ class PricingModelTrainer:
         # Очистка данных
         df = df.copy()
         df = df.dropna(subset=["price", "name", "category_name"])
-        df = df.fillna({
-            "brand_name": "Unknown",
-            "item_description": "",
-            "shipping": 0
-        })
+        df = df.fillna({"brand_name": "Unknown", "item_description": "", "shipping": 0})
 
         logger.info(f"Размер датасета после очистки: {df.shape}")
 
@@ -104,13 +91,15 @@ class PricingModelTrainer:
         df["desc_len"] = df["item_description"].str.len()
 
         # Категориальные признаки
-        df["condition_text"] = df["item_condition_id"].map({
-            1: "Новый",
-            2: "Отличное",
-            3: "Хорошее",
-            4: "Удовлетворительное",
-            5: "Плохое"
-        })
+        df["condition_text"] = df["item_condition_id"].map(
+            {
+                1: "Новый",
+                2: "Отличное",
+                3: "Хорошее",
+                4: "Удовлетворительное",
+                5: "Плохое",
+            }
+        )
 
         # Собираем статистики
         self.metrics.dataset_stats = {
@@ -122,8 +111,8 @@ class PricingModelTrainer:
                 "min": float(df["price"].min()),
                 "max": float(df["price"].max()),
                 "mean": float(df["price"].mean()),
-                "median": float(df["price"].median())
-            }
+                "median": float(df["price"].median()),
+            },
         }
 
         return df
@@ -143,11 +132,7 @@ class PricingModelTrainer:
         )
 
         # Определяем категориальные признаки
-        cat_features = [
-            "category_name",
-            "brand_name",
-            "condition_text"
-        ]
+        cat_features = ["category_name", "brand_name", "condition_text"]
 
         # Обучение модели
         self.model = CatBoostRegressor(
@@ -157,16 +142,13 @@ class PricingModelTrainer:
             loss_function="RMSE",
             random_seed=42,
             verbose=False,
-            cat_features=cat_features
+            cat_features=cat_features,
         )
 
         self.model.fit(X_train, y_train)
 
         # Сохраняем важность признаков
-        feature_importance = dict(zip(
-            X_train.columns,
-            self.model.feature_importances_
-        ))
+        feature_importance = dict(zip(X_train.columns, self.model.feature_importances_))
         self.metrics.feature_importance = feature_importance
 
         # Считаем метрики
@@ -179,9 +161,7 @@ class PricingModelTrainer:
         self.metrics.metrics["train"]["mae"] = float(
             mean_absolute_error(y_train, y_train_pred)
         )
-        self.metrics.metrics["train"]["r2"] = float(
-            r2_score(y_train, y_train_pred)
-        )
+        self.metrics.metrics["train"]["r2"] = float(r2_score(y_train, y_train_pred))
 
         self.metrics.metrics["test"]["rmse"] = float(
             np.sqrt(mean_squared_error(y_test, y_test_pred))
@@ -189,9 +169,7 @@ class PricingModelTrainer:
         self.metrics.metrics["test"]["mae"] = float(
             mean_absolute_error(y_test, y_test_pred)
         )
-        self.metrics.metrics["test"]["r2"] = float(
-            r2_score(y_test, y_test_pred)
-        )
+        self.metrics.metrics["test"]["r2"] = float(r2_score(y_test, y_test_pred))
 
         # Сохраняем модель и метрики
         self.save_model()

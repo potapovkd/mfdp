@@ -8,8 +8,9 @@ from typing import Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from users.domain.models import User, UserCredentials
 from users.adapters.orm import UserORM
+from users.domain.models import User, UserCredentials
+
 from .repositories import IUserRepository
 
 
@@ -75,9 +76,7 @@ class PostgreSQLUserRepository(IUserRepository):
 
     async def get_user_by_email(self, email: str) -> Optional[User]:
         """Получение пользователя по email."""
-        result = await self.session.execute(
-            select(UserORM).filter_by(email=email)
-        )
+        result = await self.session.execute(select(UserORM).filter_by(email=email))
         user_orm = result.scalars().first()
 
         if user_orm:
@@ -92,9 +91,7 @@ class PostgreSQLUserRepository(IUserRepository):
 
     async def get_user_by_id(self, user_id: int) -> Optional[User]:
         """Получение пользователя по ID."""
-        result = await self.session.execute(
-            select(UserORM).filter_by(id=user_id)
-        )
+        result = await self.session.execute(select(UserORM).filter_by(id=user_id))
         user_orm = result.scalars().first()
 
         if user_orm:
@@ -117,4 +114,4 @@ class PostgreSQLUserRepository(IUserRepository):
             )
             return result.rowcount > 0
         except Exception:
-            return False 
+            return False

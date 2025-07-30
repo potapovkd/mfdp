@@ -1,8 +1,7 @@
-"""Модели пользователей для системы ценовой оптимизации."""
+"""Модели данных для работы с пользователями."""
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 
 from pydantic import BaseModel, EmailStr
 
@@ -28,7 +27,7 @@ class User(UserCredentials, UserMetadata):
 
 class BillingRequest(BaseModel):
     """Модель запроса на списание средств."""
-    
+
     user_id: int
     amount: Decimal
     description: str
@@ -37,7 +36,7 @@ class BillingRequest(BaseModel):
 
 class BillingResponse(BaseModel):
     """Модель ответа на списание средств."""
-    
+
     success: bool
     new_balance: Decimal
     charged_amount: Decimal
@@ -46,8 +45,20 @@ class BillingResponse(BaseModel):
 
 class PricingTariff(BaseModel):
     """Модель тарифа для прогнозирования цен."""
-    
+
     single_item_price: Decimal = Decimal("5.00")
     bulk_discount_threshold: int = 10  # Скидка при количестве товаров >= 10
-    bulk_discount_percent: int = 20    # 20% скидка для bulk запросов
-    max_items_per_request: int = 100   # Максимум товаров в одном запросе
+    bulk_discount_percent: int = 20  # 20% скидка для bulk запросов
+    max_items_per_request: int = 100  # Максимум товаров в одном запросе
+
+
+# DTO модели для API endpoints
+UserCreateDTO = UserCredentials
+UserLoginDTO = UserCredentials
+
+
+class UserLoginResponse(BaseModel):
+    """Модель ответа на аутентификацию пользователя."""
+
+    access_token: str
+    token_type: str

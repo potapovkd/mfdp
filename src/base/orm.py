@@ -1,7 +1,6 @@
 """Базовые классы и функции для работы с ORM."""
 
-import logging
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from base.config import get_settings
@@ -16,15 +15,11 @@ engine = create_async_engine(
     f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}@"
     f"{settings.db_host}:{settings.db_port}/{settings.db_name}",
     echo=False,
-    future=True
+    future=True,
 )
 
 # Создаем фабрику сессий
-async_session = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 def get_session_factory():

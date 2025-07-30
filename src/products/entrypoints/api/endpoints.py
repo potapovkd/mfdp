@@ -1,35 +1,34 @@
 """API эндпоинты для работы с товарами и ценообразованием."""
 
-import logging
-import pandas as pd
 import io
-import tempfile
+import logging
 import os
-from decimal import Decimal
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
-from fastapi.responses import FileResponse
+import tempfile
 from typing import Annotated, List
+
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+
+from base.data_structures import JWTPayloadDTO
 
 # NOTE: Use direct dependency function instead of precomputed TokenDependency
 from base.dependencies import get_token_from_header
-from base.data_structures import JWTPayloadDTO
 from base.exceptions import (
     AuthenticationError,
     AuthorizationError,
     DatabaseError,
+    MLServiceError,
     ProductNotFoundError,
     TaskQueueError,
-    MLServiceError
 )
-from products.domain.models import (
-    Product, ProductData, PricingRequest, PricingResponse
-)
+from base.orm import get_session_factory
+from products.domain.models import PricingRequest, PricingResponse, Product, ProductData
 from products.entrypoints.api.dependencies import ProductServiceDependency
 from products.services.services import MLPricingService
+from users.domain.models import BillingRequest
 from users.services.services import UserService
 from users.services.unit_of_work import PostgreSQLUserUnitOfWork
-from base.orm import get_session_factory
-from users.domain.models import BillingRequest, BillingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ ml_service = MLPricingService()
 @router.get("/products/", response_model=List[Product])
 async def get_user_products(
     service: ProductServiceDependency,
-    token: JWTPayloadDTO = Depends(get_token_from_header)
+    token: JWTPayloadDTO = Depends(get_token_from_header),
 ) -> List[Product]:
     """Получение списка товаров пользователя."""
     try:
@@ -57,7 +56,7 @@ async def get_user_products(
 async def add_product(
     product_data: ProductData,
     service: ProductServiceDependency,
-    token: JWTPayloadDTO = Depends(get_token_from_header)
+    token: JWTPayloadDTO = Depends(get_token_from_header),
 ) -> Product:
     """Добавление нового товара."""
     try:
@@ -75,53 +74,54 @@ async def upload_products_excel(
     service: ProductServiceDependency,
 ):
     """Загрузка товаров из Excel файла."""
-    if not file.filename.endswith(('.xlsx', '.xls')):
-        raise HTTPException(status_code=400, detail="File must be Excel format (.xlsx or .xls)")
-    
+    if not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(
+            status_code=400, detail="File must be Excel format (.xlsx or .xls)"
+        )
+
     try:
         # Читаем Excel файл
         content = await file.read()
-        df = pd.read_excel(io.BytesIO(content), sheet_name='Products')
-        
+        df = pd.read_excel(io.BytesIO(content), sheet_name="Products")
+
         # Проверяем обязательные колонки
-        required_columns = ['name', 'category_name']
+        required_columns = ["name", "category_name"]
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Missing required columns: {missing_columns}"
+                status_code=400, detail=f"Missing required columns: {missing_columns}"
             )
-        
+
         # Обрабатываем каждую строку
         created_products = []
         errors = []
-        
+
         for index, row in df.iterrows():
             try:
                 # Создаем ProductData из строки
                 product_data = ProductData(
-                    name=str(row['name']).strip(),
-                    item_description=str(row.get('item_description', '')).strip(),
-                    category_name=str(row['category_name']).strip(),
-                    brand_name=str(row.get('brand_name', 'Unknown')).strip(),
-                    item_condition_id=int(row.get('item_condition_id', 1)),
-                    shipping=int(row.get('shipping', 0))
+                    name=str(row["name"]).strip(),
+                    item_description=str(row.get("item_description", "")).strip(),
+                    category_name=str(row["category_name"]).strip(),
+                    brand_name=str(row.get("brand_name", "Unknown")).strip(),
+                    item_condition_id=int(row.get("item_condition_id", 1)),
+                    shipping=int(row.get("shipping", 0)),
                 )
-                
+
                 # Добавляем товар
                 product = await service.add_product(data_from_token.id, product_data)
                 created_products.append(product)
-                
+
             except Exception as e:
                 errors.append(f"Row {index + 2}: {str(e)}")
-        
+
         return {
             "message": f"Successfully created {len(created_products)} products",
             "created_count": len(created_products),
             "errors": errors,
-            "products": [{"id": p.id, "name": p.name} for p in created_products]
+            "products": [{"id": p.id, "name": p.name} for p in created_products],
         }
-        
+
     except Exception as e:
         logger.error(f"Error processing Excel file: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
@@ -131,7 +131,7 @@ async def upload_products_excel(
 async def get_product(
     product_id: int,
     service: ProductServiceDependency,
-    token: JWTPayloadDTO = Depends(get_token_from_header)
+    token: JWTPayloadDTO = Depends(get_token_from_header),
 ) -> Product:
     """Получение информации о товаре."""
     try:
@@ -146,7 +146,7 @@ async def get_product(
 async def delete_product(
     product_id: int,
     service: ProductServiceDependency,
-    token: JWTPayloadDTO = Depends(get_token_from_header)
+    token: JWTPayloadDTO = Depends(get_token_from_header),
 ) -> None:
     """Удаление товара."""
     try:
@@ -163,20 +163,18 @@ async def delete_product(
 async def predict_price(
     request: PricingRequest,
     service: ProductServiceDependency,
-    token: JWTPayloadDTO = Depends(get_token_from_header)
+    token: JWTPayloadDTO = Depends(get_token_from_header),
 ) -> PricingResponse:
     """Прогнозирование цены для товара."""
     try:
         product, task = await service.create_pricing_task(
-            None,  # Новый товар
-            request.product_data,
-            token.id
+            None, request.product_data, token.id  # Новый товар
         )
         return PricingResponse(
             predicted_price=task.result["predicted_price"],
             confidence_score=task.result["confidence_score"],
             price_range=task.result["price_range"],
-            category_analysis=task.result["category_analysis"]
+            category_analysis=task.result["category_analysis"],
         )
     except (AuthenticationError, AuthorizationError) as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -198,77 +196,79 @@ async def predict_price_multiple(
     """Прогнозирование цен для множества товаров пользователя."""
     if not product_ids:
         raise HTTPException(status_code=400, detail="No product IDs provided")
-    
+
     if len(product_ids) > 100:  # Лимит на количество товаров
         raise HTTPException(status_code=400, detail="Too many products (max 100)")
-    
+
     try:
         # Получаем товары пользователя
         user_products = await service.get_user_products(data_from_token.id)
         user_product_ids = {p.id for p in user_products}
-        
+
         # Проверяем, что все товары принадлежат пользователю
         invalid_ids = [pid for pid in product_ids if pid not in user_product_ids]
         if invalid_ids:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Products not found or not owned by user: {invalid_ids}"
+                status_code=400,
+                detail=f"Products not found or not owned by user: {invalid_ids}",
             )
-        
+
         # Проверяем баланс и списываем средства
         session_factory = get_session_factory()
         user_uow = PostgreSQLUserUnitOfWork(session_factory)
         user_service = UserService(user_uow)
-        
+
         cost = user_service.calculate_pricing_cost(len(product_ids))
         current_balance = await user_service.get_user_balance(data_from_token.id)
-        
+
         if current_balance < cost:
             raise HTTPException(
-                status_code=402, 
-                detail=f"Insufficient balance. Required: ${cost}, Available: ${current_balance}"
+                status_code=402,
+                detail=f"Insufficient balance. Required: ${cost}, Available: ${current_balance}",
             )
-        
+
         # Списываем средства
         billing_request = BillingRequest(
             user_id=data_from_token.id,
             amount=cost,
             description=f"Price prediction for {len(product_ids)} products",
-            items_count=len(product_ids)
+            items_count=len(product_ids),
         )
-        
+
         billing_response = await user_service.charge_user(billing_request)
         if not billing_response.success:
             raise HTTPException(status_code=500, detail=billing_response.message)
-        
+
         # Получаем прогнозы для всех товаров
         results = []
         for product_id in product_ids:
             product = next(p for p in user_products if p.id == product_id)
-            
+
             product_data = ProductData(
                 name=product.name,
                 item_description=product.item_description,
                 category_name=product.category_name,
                 brand_name=product.brand_name,
                 item_condition_id=product.item_condition_id,
-                shipping=product.shipping
+                shipping=product.shipping,
             )
-            
+
             prediction = await ml_service.get_price_prediction(product_data)
-            results.append({
-                "product_id": product_id,
-                "product_name": product.name,
-                "prediction": prediction
-            })
-        
+            results.append(
+                {
+                    "product_id": product_id,
+                    "product_name": product.name,
+                    "prediction": prediction,
+                }
+            )
+
         return {
             "message": f"Successfully predicted prices for {len(product_ids)} products",
             "charged_amount": str(cost),
             "new_balance": str(billing_response.new_balance),
-            "results": results
+            "results": results,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -291,7 +291,7 @@ async def export_pricing_results(
                 product_id = result.get("product_id", "")
                 product_name = result.get("product_name", "")
                 prediction = result.get("prediction", {})
-                
+
                 # Извлекаем данные из prediction с проверкой типов
                 predicted_price = prediction.get("predicted_price", 0)
                 if isinstance(predicted_price, str):
@@ -299,46 +299,60 @@ async def export_pricing_results(
                         predicted_price = float(predicted_price)
                     except (ValueError, TypeError):
                         predicted_price = 0
-                
+
                 confidence_score = prediction.get("confidence_score", 0)
                 if isinstance(confidence_score, str):
                     try:
                         confidence_score = float(confidence_score)
                     except (ValueError, TypeError):
                         confidence_score = 0
-                
+
                 price_range = prediction.get("price_range", {})
                 category_analysis = prediction.get("category_analysis", {})
-                
-                export_data.append({
-                    "Product ID": str(product_id),
-                    "Product Name": str(product_name),
-                    "Predicted Price": f"${predicted_price:.2f}" if predicted_price else "$0.00",
-                    "Confidence Score": f"{confidence_score:.1%}" if confidence_score else "0%",
-                    "Price Range Min": f"${price_range.get('min', 0):.2f}" if price_range.get('min') else "$0.00",
-                    "Price Range Max": f"${price_range.get('max', 0):.2f}" if price_range.get('max') else "$0.00",
-                    "Category Analysis": str(category_analysis.get("recommendation", ""))
-                })
+
+                export_data.append(
+                    {
+                        "Product ID": str(product_id),
+                        "Product Name": str(product_name),
+                        "Predicted Price": f"${predicted_price:.2f}"
+                        if predicted_price
+                        else "$0.00",
+                        "Confidence Score": f"{confidence_score:.1%}"
+                        if confidence_score
+                        else "0%",
+                        "Price Range Min": f"${price_range.get('min', 0):.2f}"
+                        if price_range.get("min")
+                        else "$0.00",
+                        "Price Range Max": f"${price_range.get('max', 0):.2f}"
+                        if price_range.get("max")
+                        else "$0.00",
+                        "Category Analysis": str(
+                            category_analysis.get("recommendation", "")
+                        ),
+                    }
+                )
             except Exception as e:
                 logger.error(f"Error processing result for export: {e}")
                 # Добавляем пустую строку в случае ошибки
-                export_data.append({
-                    "Product ID": "Error",
-                    "Product Name": "Error",
-                    "Predicted Price": "$0.00",
-                    "Confidence Score": "0%",
-                    "Price Range Min": "$0.00",
-                    "Price Range Max": "$0.00",
-                    "Category Analysis": "Error processing data"
-                })
-        
+                export_data.append(
+                    {
+                        "Product ID": "Error",
+                        "Product Name": "Error",
+                        "Predicted Price": "$0.00",
+                        "Confidence Score": "0%",
+                        "Price Range Min": "$0.00",
+                        "Price Range Max": "$0.00",
+                        "Category Analysis": "Error processing data",
+                    }
+                )
+
         df = pd.DataFrame(export_data)
-        
+
         # Создаем Excel файл в памяти
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Price Predictions', index=False)
-            
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="Price Predictions", index=False)
+
             # Добавляем сводку
             try:
                 # Извлекаем числовые значения цен для расчета среднего
@@ -351,37 +365,33 @@ async def export_pricing_results(
                             prices.append(price)
                         except (ValueError, TypeError):
                             continue
-                
+
                 avg_price = sum(prices) / len(prices) if prices else 0
-                
+
                 summary_data = {
                     "Metric": ["Total Products", "Average Price", "Total Cost"],
                     "Value": [
                         len(results),
                         f"${avg_price:.2f}",
-                        f"${len(results) * 5.00:.2f}"  # $5 per prediction
-                    ]
+                        f"${len(results) * 5.00:.2f}",  # $5 per prediction
+                    ],
                 }
             except Exception as e:
                 logger.error(f"Error calculating summary: {e}")
                 summary_data = {
                     "Metric": ["Total Products", "Average Price", "Total Cost"],
-                    "Value": [
-                        len(results),
-                        "$0.00",
-                        f"${len(results) * 5.00:.2f}"
-                    ]
+                    "Value": [len(results), "$0.00", f"${len(results) * 5.00:.2f}"],
                 }
             summary_df = pd.DataFrame(summary_data)
-            summary_df.to_excel(writer, sheet_name='Summary', index=False)
-        
+            summary_df.to_excel(writer, sheet_name="Summary", index=False)
+
         output.seek(0)
-        
+
         # Создаем временный файл
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
             tmp_file.write(output.getvalue())
             tmp_file_path = tmp_file.name
-        
+
         # Создаем функцию для очистки файла после отправки
         def cleanup_file():
             try:
@@ -389,17 +399,19 @@ async def export_pricing_results(
                     os.unlink(tmp_file_path)
             except Exception as e:
                 logger.error(f"Error cleaning up temp file {tmp_file_path}: {e}")
-        
+
         return FileResponse(
             tmp_file_path,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             filename=f"price_predictions_{data_from_token.id}.xlsx",
-            background=cleanup_file
+            background=cleanup_file,
         )
-        
+
     except Exception as e:
         logger.error(f"Error exporting results: {e}")
-        raise HTTPException(status_code=500, detail=f"Error exporting results: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error exporting results: {str(e)}"
+        )
 
 
 @router.get("/pricing/info/", response_model=dict)

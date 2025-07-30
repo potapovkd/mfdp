@@ -1,0 +1,77 @@
+name: Docker Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  docker-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
+    - name: Create models directory
+      run: |
+        mkdir -p models
+        # Create dummy model files for tests
+        echo "dummy model content" > models/catboost_pricing_model.cbm
+        echo "dummy pipeline content" > models/preprocessing_pipeline.pkl
+
+    - name: Build Docker images
+      run: |
+        docker compose build api ml-worker
+
+    - name: Start services
+      run: |
+        docker compose up -d db redis rabbitmq
+        
+        # Wait for services to be ready
+        echo "Waiting for services to start..."
+        sleep 30
+        
+        # Check service health
+        docker compose ps
+
+    - name: Run tests in Docker
+      run: |
+        docker compose run --rm api pytest src/tests/ -v --tb=short
+      timeout-minutes: 15
+
+    - name: Check ML Worker status
+      run: |
+        docker compose up -d ml-worker
+        sleep 10
+        docker compose logs ml-worker
+        
+        # Check if ML workers are running
+        docker compose ps ml-worker
+
+    - name: Run full integration test
+      run: |
+        # Start all services
+        docker compose up -d
+        sleep 30
+        
+        # Run specific E2E tests that require full stack
+        docker compose exec -T api pytest src/tests/test_e2e.py::TestE2EMLWorker -v
+      timeout-minutes: 10
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker compose down -v
+        docker system prune -f 

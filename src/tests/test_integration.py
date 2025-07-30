@@ -1,22 +1,22 @@
 """Интеграционные тесты для системы ценовой оптимизации."""
 
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
-from main import app
-from products.domain.models import ProductData, PricingRequest
-from products.services.services import MLPricingService
 from base.exceptions import (
     AuthenticationError,
     AuthorizationError,
     DatabaseError,
+    MLServiceError,
     ProductNotFoundError,
     TaskQueueError,
-    MLServiceError
 )
+from main import app
+from products.domain.models import PricingRequest, ProductData
+from products.services.services import MLPricingService
 
 
 class TestPricingIntegration:
@@ -41,7 +41,7 @@ class TestPricingIntegration:
             category_name="Electronics",
             brand_name="TestBrand",
             item_condition_id=1,
-            shipping=0
+            shipping=0,
         )
 
         # Тестируем информационный метод
@@ -62,7 +62,7 @@ class TestPricingIntegration:
             "predicted_price": 29.99,
             "confidence_score": 0.85,
             "price_range": {"min": 25.0, "max": 35.0},
-            "category_analysis": {"category": "Electronics"}
+            "category_analysis": {"category": "Electronics"},
         }
 
         service.pricing_service = mock_pricing_service
@@ -73,7 +73,7 @@ class TestPricingIntegration:
             category_name="Electronics",
             brand_name="Apple",
             item_condition_id=1,
-            shipping=0
+            shipping=0,
         )
 
         result = await service.get_price_prediction(product_data)
@@ -92,7 +92,7 @@ class TestPricingIntegration:
             "category_name": "Electronics",
             "brand_name": "Brand",
             "item_condition_id": 1,
-            "shipping": 0
+            "shipping": 0,
         }
 
         product = ProductData(**valid_data)
@@ -104,7 +104,7 @@ class TestPricingIntegration:
             "name": "Test",
             "category_name": "Electronics",
             "item_condition_id": 1,
-            "shipping": 0
+            "shipping": 0,
         }
 
         product_minimal = ProductData(**minimal_data)
@@ -118,7 +118,7 @@ class TestPricingIntegration:
             name="Test Product",
             category_name="Electronics",
             item_condition_id=1,
-            shipping=0
+            shipping=0,
         )
 
         request = PricingRequest(product_data=product_data)
@@ -147,7 +147,7 @@ class TestAPIIntegration:
                 predicted_price=25.0,
                 confidence_score=0.8,
                 price_range={"min": 20.0, "max": 30.0},
-                category_analysis={"category": "Electronics"}
+                category_analysis={"category": "Electronics"},
             )
             mock_service_class.return_value = mock_service
 
@@ -172,7 +172,7 @@ class TestDataFlow:
             category_name="Electronics/Video Games",
             brand_name="Nintendo",
             item_condition_id=1,
-            shipping=1
+            shipping=1,
         )
 
         # 2. Создание запроса
@@ -200,7 +200,7 @@ class TestDataFlow:
             name="Test Product",
             category_name="Electronics",
             item_condition_id=1,
-            shipping=0
+            shipping=0,
         )
 
         result = await service.get_only_price_info(product_data)
@@ -212,7 +212,7 @@ class TestConfigIntegration:
 
     def test_config_loading(self):
         """Тест загрузки конфигурации."""
-        from base.config import get_settings, get_model_path, get_preprocessing_path
+        from base.config import get_model_path, get_preprocessing_path, get_settings
 
         settings = get_settings()
         model_path = get_model_path()
@@ -250,7 +250,7 @@ class TestErrorHandling:
 
             response = client.get(
                 "/api/v1/products/products/",
-                headers={"Authorization": "Bearer invalid_token"}
+                headers={"Authorization": "Bearer invalid_token"},
             )
 
             assert response.status_code == 401
@@ -261,21 +261,22 @@ class TestErrorHandling:
 
     def test_authorization_error_handling(self, client):
         """Тест обработки ошибок авторизации."""
-        with patch("base.dependencies.get_token_from_header") as mock_token_dep, \
-             patch("products.services.services.ProductService") as mock_service_class:
-            
+        with patch("base.dependencies.get_token_from_header") as mock_token_dep, patch(
+            "products.services.services.ProductService"
+        ) as mock_service_class:
             mock_token = Mock()
             mock_token.id = 1
             mock_token_dep.return_value = mock_token
 
             mock_service_instance = AsyncMock()
-            mock_service_instance.delete_product.side_effect = \
-                AuthorizationError("No permission to delete")
+            mock_service_instance.delete_product.side_effect = AuthorizationError(
+                "No permission to delete"
+            )
             mock_service_class.return_value = mock_service_instance
 
             response = client.delete(
                 "/api/v1/products/products/1",
-                headers={"Authorization": "Bearer test_token"}
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Проверяем что получили правильную ошибку (может быть и 500 из-за реальной ошибки)
@@ -283,21 +284,22 @@ class TestErrorHandling:
 
     def test_database_error_handling(self, client):
         """Тест обработки ошибок базы данных."""
-        with patch("base.dependencies.get_token_from_header") as mock_token_dep, \
-             patch("products.services.services.ProductService") as mock_service_class:
-            
+        with patch("base.dependencies.get_token_from_header") as mock_token_dep, patch(
+            "products.services.services.ProductService"
+        ) as mock_service_class:
             mock_token = Mock()
             mock_token.id = 1
             mock_token_dep.return_value = mock_token
 
             mock_service_instance = AsyncMock()
-            mock_service_instance.get_user_products.side_effect = \
-                DatabaseError("Database connection failed")
+            mock_service_instance.get_user_products.side_effect = DatabaseError(
+                "Database connection failed"
+            )
             mock_service_class.return_value = mock_service_instance
 
             response = client.get(
                 "/api/v1/products/products/",
-                headers={"Authorization": "Bearer test_token"}
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Проверяем что получили ошибку сервера
@@ -307,21 +309,22 @@ class TestErrorHandling:
 
     def test_product_not_found_error_handling(self, client):
         """Тест обработки ошибок отсутствия товара."""
-        with patch("base.dependencies.get_token_from_header") as mock_token_dep, \
-             patch("products.services.services.ProductService") as mock_service_class:
-            
+        with patch("base.dependencies.get_token_from_header") as mock_token_dep, patch(
+            "products.services.services.ProductService"
+        ) as mock_service_class:
             mock_token = Mock()
             mock_token.id = 1
             mock_token_dep.return_value = mock_token
 
             mock_service_instance = AsyncMock()
-            mock_service_instance.get_product.side_effect = \
-                ProductNotFoundError("Product not found")
+            mock_service_instance.get_product.side_effect = ProductNotFoundError(
+                "Product not found"
+            )
             mock_service_class.return_value = mock_service_instance
 
             response = client.get(
                 "/api/v1/products/products/999",
-                headers={"Authorization": "Bearer test_token"}
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Может быть 404 или 500 в зависимости от реализации
@@ -329,27 +332,30 @@ class TestErrorHandling:
 
     def test_task_queue_error_handling(self, client):
         """Тест обработки ошибок очереди задач."""
-        with patch("base.dependencies.get_token_from_header") as mock_token_dep, \
-             patch("products.services.services.ProductService") as mock_service_class:
-            
+        with patch("base.dependencies.get_token_from_header") as mock_token_dep, patch(
+            "products.services.services.ProductService"
+        ) as mock_service_class:
             mock_token = Mock()
             mock_token.id = 1
             mock_token_dep.return_value = mock_token
 
             mock_service_instance = AsyncMock()
-            mock_service_instance.create_pricing_task.side_effect = \
-                TaskQueueError("Queue connection failed")
+            mock_service_instance.create_pricing_task.side_effect = TaskQueueError(
+                "Queue connection failed"
+            )
             mock_service_class.return_value = mock_service_instance
 
             response = client.post(
                 "/api/v1/products/pricing/predict/",
-                json={"product_data": {
-                    "name": "Test Product",
-                    "category_name": "Electronics",
-                    "item_condition_id": 1,
-                    "shipping": 0
-                }},
-                headers={"Authorization": "Bearer test_token"}
+                json={
+                    "product_data": {
+                        "name": "Test Product",
+                        "category_name": "Electronics",
+                        "item_condition_id": 1,
+                        "shipping": 0,
+                    }
+                },
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Ожидаем ошибку сервера
@@ -359,27 +365,30 @@ class TestErrorHandling:
 
     def test_ml_service_error_handling(self, client):
         """Тест обработки ошибок ML сервиса."""
-        with patch("base.dependencies.get_token_from_header") as mock_token_dep, \
-             patch("products.services.services.ProductService") as mock_service_class:
-            
+        with patch("base.dependencies.get_token_from_header") as mock_token_dep, patch(
+            "products.services.services.ProductService"
+        ) as mock_service_class:
             mock_token = Mock()
             mock_token.id = 1
             mock_token_dep.return_value = mock_token
 
             mock_service_instance = AsyncMock()
-            mock_service_instance.create_pricing_task.side_effect = \
-                MLServiceError("Model loading failed")
+            mock_service_instance.create_pricing_task.side_effect = MLServiceError(
+                "Model loading failed"
+            )
             mock_service_class.return_value = mock_service_instance
 
             response = client.post(
                 "/api/v1/products/pricing/predict/",
-                json={"product_data": {
-                    "name": "Test Product",
-                    "category_name": "Electronics",
-                    "item_condition_id": 1,
-                    "shipping": 0
-                }},
-                headers={"Authorization": "Bearer test_token"}
+                json={
+                    "product_data": {
+                        "name": "Test Product",
+                        "category_name": "Electronics",
+                        "item_condition_id": 1,
+                        "shipping": 0,
+                    }
+                },
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Ожидаем ошибку сервера
@@ -394,5 +403,5 @@ class TestErrorHandling:
         response = client.get(
             "/api/v1/products/pricing/info/",
         )
-        # Endpoint должен отвечать 
+        # Endpoint должен отвечать
         assert response.status_code in [200, 500]  # 500 если модель не загружена

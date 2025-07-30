@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,13 +11,13 @@ from base.config import get_settings
 from base.exceptions import (
     AuthenticationError,
     AuthorizationError,
-    ValidationError,
     DatabaseError,
-    ProductNotFoundError,
-    PermissionDeniedError,
     InsufficientFundsError,
     MLServiceError,
-    TaskQueueError
+    PermissionDeniedError,
+    ProductNotFoundError,
+    TaskQueueError,
+    ValidationError,
 )
 from base.orm import init_db
 from products.entrypoints.api.endpoints import router as products_router
@@ -47,7 +48,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Настройка CORS
@@ -59,13 +60,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Регистрация обработчиков исключений
 @app.exception_handler(AuthenticationError)
 async def authentication_error_handler(request, exc):
     """Обработчик ошибок аутентификации."""
     return JSONResponse(
-        status_code=401,
-        content={"detail": str(exc), "type": "authentication_error"}
+        status_code=401, content={"detail": str(exc), "type": "authentication_error"}
     )
 
 
@@ -73,8 +74,7 @@ async def authentication_error_handler(request, exc):
 async def authorization_error_handler(request, exc):
     """Обработчик ошибок авторизации."""
     return JSONResponse(
-        status_code=403,
-        content={"detail": str(exc), "type": "authorization_error"}
+        status_code=403, content={"detail": str(exc), "type": "authorization_error"}
     )
 
 
@@ -82,8 +82,7 @@ async def authorization_error_handler(request, exc):
 async def validation_error_handler(request, exc):
     """Обработчик ошибок валидации."""
     return JSONResponse(
-        status_code=422,
-        content={"detail": str(exc), "type": "validation_error"}
+        status_code=422, content={"detail": str(exc), "type": "validation_error"}
     )
 
 
@@ -91,8 +90,7 @@ async def validation_error_handler(request, exc):
 async def database_error_handler(request, exc):
     """Обработчик ошибок базы данных."""
     return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "type": "database_error"}
+        status_code=500, content={"detail": str(exc), "type": "database_error"}
     )
 
 
@@ -100,8 +98,7 @@ async def database_error_handler(request, exc):
 async def not_found_error_handler(request, exc):
     """Обработчик ошибок отсутствия товара."""
     return JSONResponse(
-        status_code=404,
-        content={"detail": str(exc), "type": "not_found_error"}
+        status_code=404, content={"detail": str(exc), "type": "not_found_error"}
     )
 
 
@@ -109,8 +106,7 @@ async def not_found_error_handler(request, exc):
 async def permission_error_handler(request, exc):
     """Обработчик ошибок доступа."""
     return JSONResponse(
-        status_code=403,
-        content={"detail": str(exc), "type": "permission_error"}
+        status_code=403, content={"detail": str(exc), "type": "permission_error"}
     )
 
 
@@ -119,7 +115,7 @@ async def funds_error_handler(request, exc):
     """Обработчик ошибок недостатка средств."""
     return JSONResponse(
         status_code=402,
-        content={"detail": str(exc), "type": "insufficient_funds_error"}
+        content={"detail": str(exc), "type": "insufficient_funds_error"},
     )
 
 
@@ -127,8 +123,7 @@ async def funds_error_handler(request, exc):
 async def ml_error_handler(request, exc):
     """Обработчик ошибок ML сервиса."""
     return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "type": "ml_service_error"}
+        status_code=500, content={"detail": str(exc), "type": "ml_service_error"}
     )
 
 
@@ -136,22 +131,13 @@ async def ml_error_handler(request, exc):
 async def queue_error_handler(request, exc):
     """Обработчик ошибок очереди задач."""
     return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "type": "task_queue_error"}
+        status_code=500, content={"detail": str(exc), "type": "task_queue_error"}
     )
 
 
 # Регистрация роутеров
-app.include_router(
-    users_router,
-    prefix="/api/v1/users",
-    tags=["users"]
-)
-app.include_router(
-    products_router,
-    prefix="/api/v1/products",
-    tags=["products"]
-)
+app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+app.include_router(products_router, prefix="/api/v1/products", tags=["products"])
 
 
 @app.get("/")

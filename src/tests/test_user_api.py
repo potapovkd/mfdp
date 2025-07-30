@@ -1,11 +1,12 @@
 """Unit тесты для сервисов пользователей."""
-import pytest
-from unittest.mock import AsyncMock
 import hashlib
 from datetime import datetime
+from unittest.mock import AsyncMock
 
+import pytest
+
+from users.domain.models import User, UserCredentials
 from users.services.services import UserService
-from users.domain.models import UserCredentials, User
 
 
 class TestUserService:
@@ -20,8 +21,7 @@ class TestUserService:
 
         service = UserService(mock_uow)
         user_credentials = UserCredentials(
-            email="test@example.com",
-            password="password123"
+            email="test@example.com", password="password123"
         )
 
         # Act
@@ -46,7 +46,7 @@ class TestUserService:
             id=1,
             email="test@example.com",
             password=password_hash,
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
 
         mock_uow.users.get_user_by_email.return_value = test_user
@@ -75,7 +75,7 @@ class TestUserService:
             id=1,
             email="test@example.com",
             password=password_hash,
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
 
         mock_uow.users.get_user_by_email.return_value = test_user

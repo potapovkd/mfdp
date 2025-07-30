@@ -1,11 +1,10 @@
-"""API эндпоинты для работы с пользователями."""
+"""API endpoints для работы с пользователями."""
 
-from fastapi import APIRouter, Response, Depends
+from fastapi import APIRouter, HTTPException, status
 from fastapi.security import HTTPBearer
 
-from base.dependencies import get_token_from_header
-from base.data_structures import JWTPayloadDTO
-from users.domain.models import UserCredentials
+from base.exceptions import AuthenticationError, DatabaseError
+from users.domain.models import UserCreateDTO, UserLoginDTO, UserLoginResponse
 from users.entrypoints.api.dependencies import UserServiceDependency
 
 router = APIRouter()
@@ -13,18 +12,27 @@ security = HTTPBearer()
 
 
 @router.post("/", status_code=204)
-async def register_user(
-    user: UserCredentials, service: UserServiceDependency
-) -> Response:
+async def register_user(user: UserCreateDTO, service: UserServiceDependency) -> None:
     """Регистрация нового пользователя."""
-    await service.add_user(user)
-    return Response(status_code=204)
+    try:
+        await service.add_user(user)
+    except DatabaseError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
 @router.post("/auth/", status_code=200)
 async def authenticate_user(
-    user: UserCredentials, service: UserServiceDependency
-) -> dict:
+    user: UserLoginDTO, service: UserServiceDependency
+) -> UserLoginResponse:
     """Аутентификация пользователя."""
-    token = await service.authenticate_user(user)
-    return {"access_token": token, "token_type": "bearer"}
+    try:
+        token = await service.authenticate_user(user)
+        return UserLoginResponse(access_token=token, token_type="bearer")
+    except AuthenticationError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+    except DatabaseError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )

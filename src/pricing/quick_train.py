@@ -1,20 +1,23 @@
 """Быстрое обучение модели для демонстрации.
 """
 
-import pandas as pd
-import numpy as np
 import pickle
 import re
+import warnings
 from pathlib import Path
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+
+import numpy as np
+import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import mean_squared_error
-import warnings
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+
 warnings.filterwarnings("ignore")
 
 try:
     from catboost import CatBoostRegressor
+
     catboost_available = True
 except ImportError:
     print("CatBoost не установлен")
@@ -51,11 +54,17 @@ def quick_train_model():
     df["has_description"] = (df["item_description"] != "").astype(int)
 
     # Разбиение категории
-    df["cat_main"] = df["category_name"].apply(lambda x: x.split("/")[0] if "/" in x else x)
-    df["cat_sub"] = df["category_name"].apply(lambda x: x.split("/")[1] if "/" in x and len(x.split("/"))>1 else "None")
+    df["cat_main"] = df["category_name"].apply(
+        lambda x: x.split("/")[0] if "/" in x else x
+    )
+    df["cat_sub"] = df["category_name"].apply(
+        lambda x: x.split("/")[1] if "/" in x and len(x.split("/")) > 1 else "None"
+    )
 
     # Текстовые признаки
-    df["desc_words"] = df["item_description"].apply(lambda x: len(re.findall(r"\w+", x)))
+    df["desc_words"] = df["item_description"].apply(
+        lambda x: len(re.findall(r"\w+", x))
+    )
     df["name_words"] = df["name"].apply(lambda x: len(re.findall(r"\w+", x)))
 
     # TF-IDF (упрощенный)
@@ -76,16 +85,28 @@ def quick_train_model():
 
     # Собираем признаки
     feature_cols = [
-        "item_condition_id", "shipping", "brand_enc", "cat_main_enc", "cat_sub_enc",
-        "desc_len", "name_len", "has_brand", "has_description",
-        "desc_words", "name_words"
+        "item_condition_id",
+        "shipping",
+        "brand_enc",
+        "cat_main_enc",
+        "cat_sub_enc",
+        "desc_len",
+        "name_len",
+        "has_brand",
+        "has_description",
+        "desc_words",
+        "name_words",
     ]
 
     X_base = df[feature_cols]
 
     # Добавляем TF-IDF
-    tfidf_name_df = pd.DataFrame(tfidf_name_features, columns=[f"name_tfidf_{i}" for i in range(10)])
-    tfidf_desc_df = pd.DataFrame(tfidf_desc_features, columns=[f"desc_tfidf_{i}" for i in range(10)])
+    tfidf_name_df = pd.DataFrame(
+        tfidf_name_features, columns=[f"name_tfidf_{i}" for i in range(10)]
+    )
+    tfidf_desc_df = pd.DataFrame(
+        tfidf_desc_features, columns=[f"desc_tfidf_{i}" for i in range(10)]
+    )
 
     X = pd.concat([X_base.reset_index(drop=True), tfidf_name_df, tfidf_desc_df], axis=1)
     y = np.log1p(df["price"])
@@ -99,15 +120,13 @@ def quick_train_model():
 
     print("🤖 Обучение CatBoost...")
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
     # Быстрая модель
     model = CatBoostRegressor(
-        iterations=50,
-        depth=4,
-        learning_rate=0.2,
-        random_state=42,
-        verbose=10
+        iterations=50, depth=4, learning_rate=0.2, random_state=42, verbose=10
     )
 
     model.fit(X_train, y_train, eval_set=(X_test, y_test))
@@ -136,7 +155,9 @@ def quick_train_model():
         "le_brand": le_brand,
         "le_cat_main": le_cat_main,
         "le_cat_sub": le_cat_sub,
-        "feature_columns": feature_cols + [f"name_tfidf_{i}" for i in range(10)] + [f"desc_tfidf_{i}" for i in range(10)]
+        "feature_columns": feature_cols
+        + [f"name_tfidf_{i}" for i in range(10)]
+        + [f"desc_tfidf_{i}" for i in range(10)],
     }
 
     with open("models/preprocessing_pipeline.pkl", "wb") as f:

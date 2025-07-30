@@ -10,9 +10,7 @@ from users.adapters.orm import UserORM
 def test_create_user(session: Session):
     """Тест создания пользователя."""
     user = UserORM(
-        email="test@example.com",
-        username="testuser",
-        password_hash="hashed_password"
+        email="test@example.com", username="testuser", password_hash="hashed_password"
     )
     session.add(user)
     session.commit()
@@ -30,7 +28,7 @@ def test_create_product(session: Session, user):
         user_id=user.id,
         name="Test Product",
         category_name="Electronics",
-        brand_name="TestBrand"
+        brand_name="TestBrand",
     )
     session.add(product)
     session.commit()
@@ -46,9 +44,7 @@ def test_create_task(session: Session, user):
     """Тест создания задачи ценообразования."""
     # Сначала создаем продукт
     product = ProductORM(
-        user_id=user.id,
-        name="Test Product",
-        category_name="Electronics"
+        user_id=user.id, name="Test Product", category_name="Electronics"
     )
     session.add(product)
     session.commit()
@@ -56,9 +52,7 @@ def test_create_task(session: Session, user):
 
     # Затем создаем задачу
     task = TaskORM(
-        product_id=product.id,
-        type="pricing",
-        input_data='{"product": "test"}'
+        product_id=product.id, type="pricing", input_data='{"product": "test"}'
     )
     session.add(task)
     session.commit()

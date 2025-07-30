@@ -1,9 +1,10 @@
 """Тесты для сервиса очереди задач."""
 
 import json
+from unittest.mock import patch
+
 import pytest
 import redis
-from unittest.mock import AsyncMock, Mock, patch
 
 from base.exceptions import TaskQueueError
 from products.services.task_queue import TaskQueueService
@@ -22,13 +23,10 @@ class TestTaskQueueService:
     async def test_add_task(self, service):
         """Тест добавления задачи в очередь."""
         task_id = "test_task_1"
-        product_data = {
-            "name": "Test Product",
-            "category": "Electronics"
-        }
+        product_data = {"name": "Test Product", "category": "Electronics"}
 
         # Мокаем Redis
-        with patch.object(service.redis_client, 'rpush') as mock_rpush:
+        with patch.object(service.redis_client, "rpush") as mock_rpush:
             await service.add_task(task_id, product_data)
 
             # Проверяем что задача была добавлена в Redis
@@ -45,15 +43,12 @@ class TestTaskQueueService:
     async def test_get_result(self, service):
         """Тест получения результата задачи."""
         task_id = "test_task_1"
-        result_data = {
-            "predicted_price": 100.0,
-            "confidence": 0.9
-        }
+        result_data = {"predicted_price": 100.0, "confidence": 0.9}
 
         # Мокаем Redis
-        with patch.object(service.redis_client, 'get') as mock_get, \
-             patch.object(service.redis_client, 'delete') as mock_delete:
-            
+        with patch.object(service.redis_client, "get") as mock_get, patch.object(
+            service.redis_client, "delete"
+        ) as mock_delete:
             mock_get.return_value = json.dumps(result_data).encode()
             result = await service.get_result(task_id, timeout=1)
 
@@ -69,9 +64,9 @@ class TestTaskQueueService:
         error_message = "Task processing failed"
 
         # Мокаем Redis
-        with patch.object(service.redis_client, 'get') as mock_get, \
-             patch.object(service.redis_client, 'delete') as mock_delete:
-            
+        with patch.object(service.redis_client, "get") as mock_get, patch.object(
+            service.redis_client, "delete"
+        ) as mock_delete:
             # Первый вызов - нет результата, второй - есть ошибка
             mock_get.side_effect = [None, error_message.encode()]
 
@@ -86,18 +81,17 @@ class TestTaskQueueService:
     async def test_cleanup(self, service):
         """Тест очистки старых задач."""
         # Мокаем Redis
-        with patch.object(service.redis_client, 'keys') as mock_keys, \
-             patch.object(service.redis_client, 'ttl') as mock_ttl, \
-             patch.object(service.redis_client, 'delete') as mock_delete:
-            
+        with patch.object(service.redis_client, "keys") as mock_keys, patch.object(
+            service.redis_client, "ttl"
+        ) as mock_ttl, patch.object(service.redis_client, "delete") as mock_delete:
             # Настраиваем mock_keys для двух разных паттернов
             def keys_side_effect(pattern):
                 if pattern == "result:*":
                     return ["result:task1", "result:task2"]
-                elif pattern == "error:*":
+                if pattern == "error:*":
                     return ["error:task3"]
                 return []
-            
+
             mock_keys.side_effect = keys_side_effect
             mock_ttl.return_value = -1  # Ключи устарели
 
@@ -111,9 +105,11 @@ class TestTaskQueueService:
     def test_connection_recovery(self, service):
         """Тест восстановления подключений."""
         # Проверяем что код обрабатывает исключения при вызове ping()
-        with patch.object(service.redis_client, 'ping', side_effect=redis.ConnectionError("Connection failed")) as mock_ping, \
-             patch.object(service, '_setup_connections') as mock_setup:
-
+        with patch.object(
+            service.redis_client,
+            "ping",
+            side_effect=redis.ConnectionError("Connection failed"),
+        ) as mock_ping, patch.object(service, "_setup_connections") as mock_setup:
             # Поскольку ping() выбрасывает исключение, оно перехватывается в except блоке
             # и _setup_connections НЕ вызывается - вместо этого сразу выбрасывается TaskQueueError
             with pytest.raises(TaskQueueError) as exc_info:
@@ -125,4 +121,4 @@ class TestTaskQueueService:
             mock_ping.assert_called_once()
             # _setup_connections НЕ должен вызываться в текущей реализации
             # потому что исключение ping() ловится в общем except блоке
-            mock_setup.assert_not_called() 
+            mock_setup.assert_not_called()

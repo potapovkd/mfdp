@@ -4,7 +4,6 @@ from decimal import Decimal
 from enum import Enum
 from typing import List
 
-
 from pydantic_settings import BaseSettings
 
 
@@ -65,12 +64,7 @@ class Settings(BaseSettings):
     use_ml_workers: bool = True
     ml_worker_timeout: int = 30
 
-
-
-    model_config = {
-        "env_file": ".env",
-        "extra": "ignore"
-    }
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 _settings = Settings()

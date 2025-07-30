@@ -1,42 +1,38 @@
 """End-to-End тесты для системы ценовой оптимизации."""
 
 import time
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
-import httpx
-import asyncio
-import redis
-import pika
-import json
 
+import pytest
 from fastapi.testclient import TestClient
+
 from main import app
 
 
 # Полностью изолированный async клиент для сложных E2E тестов
 class IsolatedAsyncClient:
     """Изолированный async клиент с полными моками."""
-    
+
     def __init__(self, app):
         self.app = app
-        
-    async def post(self, url, json=None, headers=None):
+
+    async def post(self, url, json_data=None, headers=None):
         """Мокированный POST запрос."""
         # Имитируем успешные ответы для наших тестов
         if "/pricing/predict/" in url:
-            return MockResponse(200, {
-                "predicted_price": 245.50,
-                "confidence_score": 0.87,
-                "price_range": {"min": 196.40, "max": 294.60},
-                "category_analysis": {
-                    "category": "Electronics",
-                    "brand": "Apple"
-                }
-            })
-        elif "/products/" in url:
+            return MockResponse(
+                200,
+                {
+                    "predicted_price": 245.50,
+                    "confidence_score": 0.87,
+                    "price_range": {"min": 196.40, "max": 294.60},
+                    "category_analysis": {"category": "Electronics", "brand": "Apple"},
+                },
+            )
+        if "/products/" in url:
             return MockResponse(201, {"id": 1, "name": "Test Product"})
         return MockResponse(200, {})
-        
+
     async def get(self, url, headers=None):
         """Мокированный GET запрос."""
         if "/products/" in url:
@@ -46,11 +42,11 @@ class IsolatedAsyncClient:
 
 class MockResponse:
     """Мокированный HTTP ответ."""
-    
+
     def __init__(self, status_code, json_data):
         self.status_code = status_code
         self._json_data = json_data
-        
+
     def json(self):
         return self._json_data
 
@@ -68,7 +64,7 @@ class TestE2EUserFlow:
         # 1. Регистрация пользователя
         registration_data = {
             "email": f"test_{int(time.time())}@example.com",
-            "password": "testpassword123"
+            "password": "testpassword123",
         }
 
         with patch("src.users.services.services.UserService") as mock_service:
@@ -86,7 +82,7 @@ class TestE2EUserFlow:
         """E2E тест полного потока ценообразования с полной изоляцией."""
         # Используем полностью изолированный клиент
         client = IsolatedAsyncClient(app)
-        
+
         # 1. Тест прогнозирования цены
         pricing_data = {
             "product_data": {
@@ -95,14 +91,14 @@ class TestE2EUserFlow:
                 "category_name": "Electronics",
                 "brand_name": "Apple",
                 "item_condition_id": 1,
-                "shipping": 1
+                "shipping": 1,
             }
         }
 
         response = await client.post(
             "/api/v1/products/pricing/predict/",
-            json=pricing_data,
-            headers={"Authorization": "Bearer test_token"}
+            json_data=pricing_data,
+            headers={"Authorization": "Bearer test_token"},
         )
 
         # Проверяем успешность запроса
@@ -124,8 +120,7 @@ class TestE2EUserFlow:
 
         # 1. Получение списка товаров (пустой)
         response = await client.get(
-            "/api/v1/products/products/",
-            headers={"Authorization": "Bearer test_token"}
+            "/api/v1/products/products/", headers={"Authorization": "Bearer test_token"}
         )
         assert response.status_code == 200
         products = response.json()
@@ -138,13 +133,13 @@ class TestE2EUserFlow:
             "category_name": "Electronics",
             "brand_name": "Apple",
             "item_condition_id": 1,
-            "shipping": 1
+            "shipping": 1,
         }
 
         response = await client.post(
             "/api/v1/products/products/",
-            json=product_data,
-            headers={"Authorization": "Bearer test_token"}
+            json_data=product_data,
+            headers={"Authorization": "Bearer test_token"},
         )
         assert response.status_code == 201
 
@@ -186,13 +181,13 @@ class TestE2EErrorScenarios:
                 "name": "",  # Пустое имя
                 "category_name": "Electronics",
                 "item_condition_id": 10,  # Неверное значение
-                "shipping": 0
+                "shipping": 0,
             }
 
             response = client.post(
                 "/api/v1/products/products/",
                 json=invalid_product_data,
-                headers={"Authorization": "Bearer test_token"}
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Должен вернуть ошибку валидации
@@ -201,7 +196,6 @@ class TestE2EErrorScenarios:
     def test_service_unavailable_scenarios(self, client):
         """Тест сценариев недоступности сервисов."""
         with patch("src.base.dependencies.get_token_from_header") as mock_token_dep:
-
             mock_token = Mock()
             mock_token.id = 1
             mock_token_dep.return_value = mock_token
@@ -211,14 +205,14 @@ class TestE2EErrorScenarios:
                     "name": "Test Product",
                     "category_name": "Electronics",
                     "item_condition_id": 1,
-                    "shipping": 0
+                    "shipping": 0,
                 }
             }
 
             response = client.post(
                 "/api/v1/products/pricing/predict/",
                 json=pricing_data,
-                headers={"Authorization": "Bearer test_token"}
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Ожидаем ошибку из-за отсутствия ML модели
@@ -266,21 +260,21 @@ class TestE2EDataConsistency:
                 "category_name": "Electronics",
                 "brand_name": "Apple",
                 "item_condition_id": 2,
-                "shipping": 0
+                "shipping": 0,
             }
         }
 
         # Делаем два идентичных запроса
         response1 = await client.post(
             "/api/v1/products/pricing/predict/",
-            json=pricing_data,
-            headers={"Authorization": "Bearer test_token"}
+            json_data=pricing_data,
+            headers={"Authorization": "Bearer test_token"},
         )
 
         response2 = await client.post(
             "/api/v1/products/pricing/predict/",
-            json=pricing_data,
-            headers={"Authorization": "Bearer test_token"}
+            json_data=pricing_data,
+            headers={"Authorization": "Bearer test_token"},
         )
 
         # Оба запроса должны быть успешными
@@ -365,7 +359,7 @@ class TestE2EMLWorker:
                     "category_name": "Electronics",
                     "brand_name": "Apple",
                     "item_condition_id": 1,
-                    "shipping": 1
+                    "shipping": 1,
                 }
             }
 
@@ -373,7 +367,7 @@ class TestE2EMLWorker:
             response = client.post(
                 "/api/v1/products/pricing/predict/",
                 json=pricing_data,
-                headers={"Authorization": "Bearer test_token"}
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Проверяем что API отвечает (может быть и ошибка, если модель не загружена)
@@ -388,10 +382,10 @@ class TestE2EMLWorker:
         """Тест доступности ML сервиса."""
         # Тестируем info endpoint
         response = client.get("/api/v1/products/pricing/info/")
-        
+
         # Должен отвечать, даже если модель не загружена
         assert response.status_code in [200, 500]
-        
+
         if response.status_code == 200:
             info = response.json()
             assert "catboost_available" in info or "model_loaded" in info
@@ -414,7 +408,7 @@ class TestE2EMLWorker:
             response = client.post(
                 "/api/v1/products/pricing/predict/",
                 json=invalid_data,
-                headers={"Authorization": "Bearer test_token"}
+                headers={"Authorization": "Bearer test_token"},
             )
 
             # Должен вернуть ошибку валидации или обработать через ML worker

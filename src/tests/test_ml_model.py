@@ -1,16 +1,14 @@
 """Тесты для ML модели и системы версионирования."""
 
-import os
 import json
-import pytest
+import warnings
+from unittest.mock import Mock, patch
+
 import numpy as np
 import pandas as pd
-from datetime import datetime
-from pathlib import Path
-from unittest.mock import Mock, patch
-import warnings
+import pytest
 
-from pricing.model_trainer import PricingModelTrainer, ModelMetrics
+from pricing.model_trainer import ModelMetrics, PricingModelTrainer
 
 
 class TestModelMetrics:
@@ -65,9 +63,7 @@ class TestModelTrainer:
     def trainer(self, tmp_path):
         """Фикстура для создания тренера модели."""
         return PricingModelTrainer(
-            model_dir=str(tmp_path),
-            model_name="test_model",
-            version="test_version"
+            model_dir=str(tmp_path), model_name="test_model", version="test_version"
         )
 
     def test_model_versioning(self, tmp_path):
@@ -75,14 +71,10 @@ class TestModelTrainer:
         version1 = "20240101_120000"
         version2 = "20240101_130000"
         trainer1 = PricingModelTrainer(
-            model_dir=str(tmp_path),
-            model_name="test_model",
-            version=version1
+            model_dir=str(tmp_path), model_name="test_model", version=version1
         )
         trainer2 = PricingModelTrainer(
-            model_dir=str(tmp_path),
-            model_name="test_model",
-            version=version2
+            model_dir=str(tmp_path), model_name="test_model", version=version2
         )
 
         assert trainer1.version_dir.exists()
@@ -93,15 +85,23 @@ class TestModelTrainer:
     def test_model_training_and_saving(self, trainer):
         """Тест обучения и сохранения модели."""
         # Создаем тестовый датасет с достаточным количеством данных
-        df = pd.DataFrame({
-            "price": [100, 200, 300, 150, 250],
-            "name": ["Product 1", "Product 2", "Product 3", "Product 4", "Product 5"],
-            "category_name": ["Electronics"] * 5,
-            "brand_name": ["Apple", "Samsung", "Apple", "Google", "Samsung"],
-            "item_description": ["Test"] * 5,
-            "item_condition_id": [1, 2, 1, 3, 2],
-            "shipping": [0, 1, 0, 1, 0]
-        })
+        df = pd.DataFrame(
+            {
+                "price": [100, 200, 300, 150, 250],
+                "name": [
+                    "Product 1",
+                    "Product 2",
+                    "Product 3",
+                    "Product 4",
+                    "Product 5",
+                ],
+                "category_name": ["Electronics"] * 5,
+                "brand_name": ["Apple", "Samsung", "Apple", "Google", "Samsung"],
+                "item_description": ["Test"] * 5,
+                "item_condition_id": [1, 2, 1, 3, 2],
+                "shipping": [0, 1, 0, 1, 0],
+            }
+        )
 
         # Мокаем CatBoost
         with patch("catboost.CatBoostRegressor") as mock_catboost:
@@ -123,15 +123,23 @@ class TestModelTrainer:
     def test_dataset_statistics(self, trainer):
         """Тест сбора статистик датасета."""
         # Создаем тестовый датасет
-        df = pd.DataFrame({
-            "price": [100, 200, 300, 400, 500],
-            "name": ["Product 1", "Product 2", "Product 3", "Product 4", "Product 5"],
-            "category_name": ["Electronics"] * 3 + ["Books"] * 2,
-            "brand_name": ["Apple", "Samsung", "Apple", "Unknown", "Unknown"],
-            "item_description": ["Test"] * 5,
-            "item_condition_id": [1, 2, 1, 3, 2],
-            "shipping": [0, 1, 0, 1, 0]
-        })
+        df = pd.DataFrame(
+            {
+                "price": [100, 200, 300, 400, 500],
+                "name": [
+                    "Product 1",
+                    "Product 2",
+                    "Product 3",
+                    "Product 4",
+                    "Product 5",
+                ],
+                "category_name": ["Electronics"] * 3 + ["Books"] * 2,
+                "brand_name": ["Apple", "Samsung", "Apple", "Unknown", "Unknown"],
+                "item_description": ["Test"] * 5,
+                "item_condition_id": [1, 2, 1, 3, 2],
+                "shipping": [0, 1, 0, 1, 0],
+            }
+        )
 
         # Запускаем предобработку
         df = trainer.preprocess_data(df)
@@ -147,4 +155,4 @@ class TestModelTrainer:
         assert trainer.metrics.dataset_stats["category_counts"]["Electronics"] == 3
         assert trainer.metrics.dataset_stats["category_counts"]["Books"] == 2
         assert trainer.metrics.dataset_stats["brand_counts"]["Apple"] == 2
-        assert trainer.metrics.dataset_stats["brand_counts"]["Unknown"] == 2 
+        assert trainer.metrics.dataset_stats["brand_counts"]["Unknown"] == 2

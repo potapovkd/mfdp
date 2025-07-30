@@ -6,8 +6,8 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import redis
 import pika
+import redis
 from pika.exceptions import AMQPConnectionError
 
 from base.config import get_settings
@@ -35,26 +35,29 @@ class TaskQueueService:
                 host=settings.redis_host,
                 port=settings.redis_port,
                 db=settings.redis_db,
-                decode_responses=True
+                decode_responses=True,
             )
             self.redis_client.ping()
-            logger.info(f"Connected to Redis at {settings.redis_host}:{settings.redis_port}")
+            logger.info(
+                f"Connected to Redis at {settings.redis_host}:{settings.redis_port}"
+            )
 
             # Подключение к RabbitMQ
             credentials = pika.PlainCredentials(
-                settings.rabbitmq_user,
-                settings.rabbitmq_pass
+                settings.rabbitmq_user, settings.rabbitmq_pass
             )
             parameters = pika.ConnectionParameters(
                 host=settings.rabbitmq_host,
                 port=settings.rabbitmq_port,
                 credentials=credentials,
                 heartbeat=600,
-                blocked_connection_timeout=300
+                blocked_connection_timeout=300,
             )
             self.rabbitmq_connection = pika.BlockingConnection(parameters)
             self.rabbitmq_channel = self.rabbitmq_connection.channel()
-            logger.info(f"Connected to RabbitMQ at {settings.rabbitmq_host}:{settings.rabbitmq_port}")
+            logger.info(
+                f"Connected to RabbitMQ at {settings.rabbitmq_host}:{settings.rabbitmq_port}"
+            )
 
             # Настройка топологии RabbitMQ
             self._setup_rabbitmq_topology()
@@ -67,9 +70,7 @@ class TaskQueueService:
         """Настройка топологии RabbitMQ."""
         # Основная очередь для результатов
         self.rabbitmq_channel.exchange_declare(
-            exchange="pricing_results",
-            exchange_type="direct",
-            durable=True
+            exchange="pricing_results", exchange_type="direct", durable=True
         )
         self.rabbitmq_channel.queue_declare(
             queue="pricing_results",
@@ -77,15 +78,13 @@ class TaskQueueService:
             arguments={
                 "x-message-ttl": 86400000,  # 24 часа
                 "x-max-length": 10000,
-                "x-overflow": "reject-publish"
-            }
+                "x-overflow": "reject-publish",
+            },
         )
 
         # Dead Letter Exchange и очередь
         self.rabbitmq_channel.exchange_declare(
-            exchange="pricing_dlx",
-            exchange_type="direct",
-            durable=True
+            exchange="pricing_dlx", exchange_type="direct", durable=True
         )
         self.rabbitmq_channel.queue_declare(
             queue="pricing_failed",
@@ -93,8 +92,8 @@ class TaskQueueService:
             arguments={
                 "x-message-ttl": 604800000,  # 7 дней
                 "x-max-length": 1000,
-                "x-overflow": "reject-publish"
-            }
+                "x-overflow": "reject-publish",
+            },
         )
 
     def _ensure_connections(self) -> None:
@@ -129,18 +128,17 @@ class TaskQueueService:
                 "task_id": task_id,
                 "product_data": product_data,
                 "created_at": datetime.now().isoformat(),
-                "attempts": 0
+                "attempts": 0,
             }
-            self.redis_client.rpush(
-                "pricing_tasks",
-                json.dumps(task_data)
-            )
+            self.redis_client.rpush("pricing_tasks", json.dumps(task_data))
             logger.info(f"Task {task_id} added to queue")
         except Exception as e:
             logger.error(f"Failed to add task {task_id}: {e}")
             raise TaskQueueError(f"Failed to add task: {str(e)}")
 
-    async def get_result(self, task_id: str, timeout: int = 30) -> Optional[Dict[str, Any]]:
+    async def get_result(
+        self, task_id: str, timeout: int = 30
+    ) -> Optional[Dict[str, Any]]:
         """Получение результата задачи."""
         try:
             self._ensure_connections()

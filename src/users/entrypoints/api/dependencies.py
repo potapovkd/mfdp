@@ -15,4 +15,4 @@ async def get_user_service(db=Depends(get_db)) -> UserService:
     return UserService(uow)
 
 
-UserServiceDependency = Annotated[UserService, Depends(get_user_service)] 
+UserServiceDependency = Annotated[UserService, Depends(get_user_service)]

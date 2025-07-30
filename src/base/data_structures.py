@@ -2,11 +2,13 @@
 
 from datetime import datetime
 from typing import Optional
+
 from pydantic import BaseModel
 
 
 class JWTPayloadDTO(BaseModel):
     """DTO для полезной нагрузки JWT токена."""
+
     id: int
     exp: Optional[datetime] = None
     type: Optional[str] = None
@@ -14,6 +16,7 @@ class JWTPayloadDTO(BaseModel):
 
 class TokenResponse(BaseModel):
     """Ответ с токенами."""
+
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str = "bearer"

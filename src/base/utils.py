@@ -1,12 +1,13 @@
 """Утилиты для работы с JWT токенами."""
 
-import jwt
 from datetime import datetime, timedelta
 from typing import Optional
 
+import jwt
+
 from base.config import get_settings
 from base.data_structures import JWTPayloadDTO
-from base.exceptions import InvalidTokenException, AuthenticationError
+from base.exceptions import AuthenticationError, InvalidTokenException
 
 settings = get_settings()
 
@@ -19,9 +20,7 @@ class JWTHandler:
         self.secret_key = secret_key
 
     def create_access_token(
-        self,
-        user_id: int,
-        expires_delta: Optional[timedelta] = None
+        self, user_id: int, expires_delta: Optional[timedelta] = None
     ) -> str:
         """Создание JWT токена."""
         if expires_delta:
@@ -31,17 +30,9 @@ class JWTHandler:
                 minutes=settings.access_token_expires_minutes
             )
 
-        to_encode = {
-            "id": user_id,
-            "exp": expire,
-            "type": "access"
-        }
+        to_encode = {"id": user_id, "exp": expire, "type": "access"}
         try:
-            encoded_jwt = jwt.encode(
-                to_encode,
-                self.secret_key,
-                algorithm="HS256"
-            )
+            encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm="HS256")
             return encoded_jwt
         except Exception as e:
             raise AuthenticationError(f"Failed to create token: {str(e)}")
@@ -49,11 +40,7 @@ class JWTHandler:
     def decode_token(self, token: str) -> JWTPayloadDTO:
         """Декодирование JWT токена."""
         try:
-            payload = jwt.decode(
-                token,
-                self.secret_key,
-                algorithms=["HS256"]
-            )
+            payload = jwt.decode(token, self.secret_key, algorithms=["HS256"])
             return JWTPayloadDTO(**payload)
         except jwt.ExpiredSignatureError:
             raise InvalidTokenException("Token has expired")
@@ -67,17 +54,9 @@ class JWTHandler:
         expires_delta = timedelta(hours=settings.refresh_token_expires_hours)
         expire = datetime.utcnow() + expires_delta
 
-        to_encode = {
-            "id": user_id,
-            "exp": expire,
-            "type": "refresh"
-        }
+        to_encode = {"id": user_id, "exp": expire, "type": "refresh"}
         try:
-            encoded_jwt = jwt.encode(
-                to_encode,
-                self.secret_key,
-                algorithm="HS256"
-            )
+            encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm="HS256")
             return encoded_jwt
         except Exception as e:
             raise AuthenticationError(f"Failed to create refresh token: {str(e)}")
@@ -85,11 +64,7 @@ class JWTHandler:
     def verify_refresh_token(self, token: str) -> int:
         """Проверка refresh токена."""
         try:
-            payload = jwt.decode(
-                token,
-                self.secret_key,
-                algorithms=["HS256"]
-            )
+            payload = jwt.decode(token, self.secret_key, algorithms=["HS256"])
             if payload.get("type") != "refresh":
                 raise InvalidTokenException("Not a refresh token")
             return payload["id"]

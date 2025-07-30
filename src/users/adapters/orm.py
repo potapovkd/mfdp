@@ -1,12 +1,12 @@
 """ORM модели для пользователей."""
 
 from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from products.adapters.orm import ProductORM
 
-from sqlalchemy import DateTime, String, Numeric
+from sqlalchemy import DateTime, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from base.orm import Base
