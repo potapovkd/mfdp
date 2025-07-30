@@ -1,6 +1,6 @@
 """Сервисы для работы с товарами и ценообразованием."""
 
-from typing import Optional, Any
+from typing import Any, Optional
 
 from base.exceptions import DatabaseError, PermissionDeniedError, ProductNotFoundError
 from pricing.pricing_service import PricingService
