@@ -1,5 +1,6 @@
 """Кастомные исключения приложения."""
 
+
 class AppException(Exception):
     """Базовое исключение приложения."""
     pass
@@ -48,3 +49,21 @@ class MLServiceError(AppException):
 class TaskQueueError(AppException):
     """Ошибка очереди задач."""
     pass
+
+
+class InvalidTokenException(AuthenticationError):
+    """Исключение о том, что токен недействителен."""
+
+    def __init__(self, detail: str) -> None:
+        """Инициализация исключения."""
+        super().__init__(detail)
+        self.detail = detail
+
+
+class DoesntExistException(AppException):
+    """Исключение о том, что сущность не существует."""
+
+    def __init__(self, detail: str = "Entity doesn't exist") -> None:
+        """Инициализация исключения."""
+        super().__init__(detail)
+        self.detail = detail

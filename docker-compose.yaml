@@ -88,6 +88,7 @@ services:
       ML_WORKER_TIMEOUT: "30"
     volumes:
       - ./models:/app/models:ro  # Mount trained models
+      - ./src:/app/src:ro  # Mount source code for development
     depends_on:
       - db
       - redis
@@ -99,14 +100,16 @@ services:
 
   webui:
     build:
-      context: webui/
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: webui/Dockerfile
     environment:
       API_BASE_URL: http://api:8000/api/v1
+    volumes:
+      - ./webui:/app:ro  # Mount WebUI code for development
     depends_on:
       - api
     ports:
-      - "8001:8001"
+      - "8501:8501"  # Стандартный порт Streamlit
     networks:
       - pricing_network
 
@@ -149,8 +152,8 @@ services:
   # ML Workers (масштабируемые воркеры)
   ml-worker:
     build:
-      context: ml_worker/
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ml_worker/Dockerfile
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -167,6 +170,7 @@ services:
       POLL_TIMEOUT: "1"
     volumes:
       - ./models:/app/models:ro
+      - ./ml_worker:/app/ml_worker:ro  # Mount worker code for development
       - ./ml_worker/logs:/app/logs
     depends_on:
       redis:
@@ -184,7 +188,6 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    # Масштабирование: docker-compose up --scale ml-worker=10
 
 volumes:
   postgres_data:

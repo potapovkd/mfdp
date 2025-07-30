@@ -1,75 +1,160 @@
-"""Основной модуль FastAPI приложения для системы ценовой оптимизации."""
+"""Основной модуль FastAPI приложения."""
 
 import logging
-
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_fastapi_instrumentator import Instrumentator
+from fastapi.responses import JSONResponse
 
-from base.config import get_allowed_hosts, get_api_prefix
-from base.exception_handlers import add_exception_handlers
-from base.orm import create_database_tables
-from products.entrypoints.api.endpoints import (
-    router as products_router,
+from base.config import get_settings
+from base.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    ValidationError,
+    DatabaseError,
+    ProductNotFoundError,
+    PermissionDeniedError,
+    InsufficientFundsError,
+    MLServiceError,
+    TaskQueueError
 )
+from base.orm import init_db
+from products.entrypoints.api.endpoints import router as products_router
 from users.entrypoints.api.endpoints import router as users_router
 
+settings = get_settings()
+
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Создание приложения FastAPI
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Управление жизненным циклом приложения."""
+    # Startup
+    await init_db()
+    yield
+    # Shutdown
+    pass
+
+
+# Создаем FastAPI приложение
 app = FastAPI(
     title="Pricing Optimization API",
-    description="API для системы ценовой оптимизации товаров",
+    description="API для оптимизации цен на маркетплейсах",
     version="1.0.0",
-)
-
-# Добавление обработчиков исключений
-add_exception_handlers(app)
-
-# Инициализация таблиц базы данных будет выполнена при старте приложения
-
-# Подключение маршрутизаторов
-app.include_router(users_router, prefix=f"{get_api_prefix()}/users")
-app.include_router(
-    products_router,
-    prefix=f"{get_api_prefix()}/products",
-    tags=["products"]
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    lifespan=lifespan
 )
 
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_allowed_hosts(),
+    allow_origins=settings.allowed_hosts.split(","),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Инициализация метрик Prometheus
-Instrumentator().instrument(app).expose(app)
+# Регистрация обработчиков исключений
+@app.exception_handler(AuthenticationError)
+async def authentication_error_handler(request, exc):
+    """Обработчик ошибок аутентификации."""
+    return JSONResponse(
+        status_code=401,
+        content={"detail": str(exc), "type": "authentication_error"}
+    )
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Событие запуска приложения."""
-    logger.info("Starting database initialization...")
-    try:
-        from base.orm import create_database_tables_async
-        await create_database_tables_async()
-        logger.info("Database initialization completed successfully!")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-        # В продакшене здесь можно добавить retry логику или graceful shutdown
+@app.exception_handler(AuthorizationError)
+async def authorization_error_handler(request, exc):
+    """Обработчик ошибок авторизации."""
+    return JSONResponse(
+        status_code=403,
+        content={"detail": str(exc), "type": "authorization_error"}
+    )
+
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request, exc):
+    """Обработчик ошибок валидации."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": str(exc), "type": "validation_error"}
+    )
+
+
+@app.exception_handler(DatabaseError)
+async def database_error_handler(request, exc):
+    """Обработчик ошибок базы данных."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "type": "database_error"}
+    )
+
+
+@app.exception_handler(ProductNotFoundError)
+async def not_found_error_handler(request, exc):
+    """Обработчик ошибок отсутствия товара."""
+    return JSONResponse(
+        status_code=404,
+        content={"detail": str(exc), "type": "not_found_error"}
+    )
+
+
+@app.exception_handler(PermissionDeniedError)
+async def permission_error_handler(request, exc):
+    """Обработчик ошибок доступа."""
+    return JSONResponse(
+        status_code=403,
+        content={"detail": str(exc), "type": "permission_error"}
+    )
+
+
+@app.exception_handler(InsufficientFundsError)
+async def funds_error_handler(request, exc):
+    """Обработчик ошибок недостатка средств."""
+    return JSONResponse(
+        status_code=402,
+        content={"detail": str(exc), "type": "insufficient_funds_error"}
+    )
+
+
+@app.exception_handler(MLServiceError)
+async def ml_error_handler(request, exc):
+    """Обработчик ошибок ML сервиса."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "type": "ml_service_error"}
+    )
+
+
+@app.exception_handler(TaskQueueError)
+async def queue_error_handler(request, exc):
+    """Обработчик ошибок очереди задач."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "type": "task_queue_error"}
+    )
+
+
+# Регистрация роутеров
+app.include_router(
+    users_router,
+    prefix="/api/v1/users",
+    tags=["users"]
+)
+app.include_router(
+    products_router,
+    prefix="/api/v1/products",
+    tags=["products"]
+)
 
 
 @app.get("/")
-async def root():
-    """Корневой эндпойнт."""
-    return {"message": "Pricing Optimization API"}
-
-
-@app.get("/health")
 async def health_check():
-    """Проверка состояния сервиса."""
-    return {"status": "healthy"}
+    """Проверка работоспособности API."""
+    return {"message": "API is running"}

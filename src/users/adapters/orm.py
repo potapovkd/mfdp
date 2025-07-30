@@ -1,6 +1,6 @@
 """ORM модели для пользователей."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ class UserORM(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     products: Mapped[list["ProductORM"]] = relationship(

@@ -1,87 +1,101 @@
-"""Утилиты."""
-
-from datetime import datetime, timedelta, timezone
-
+"""Утилиты для работы с JWT токенами."""
 
 import jwt
+from datetime import datetime, timedelta
+from typing import Optional
 
-from base.data_structures import (
-    AccessTokenDTO,
-    JWTPayloadDTO,
-    JWTPayloadExtendedDTO,
-    TokenPairDTO,
-)
-from base.exceptions import InvalidTokenException
+from base.config import get_settings
+from base.data_structures import JWTPayloadDTO
+from base.exceptions import InvalidTokenException, AuthenticationError
+
+settings = get_settings()
 
 
 class JWTHandler:
-    """Обработчик JSON Web Token'ов."""
+    """Класс для работы с JWT токенами."""
 
-    def __init__(self, secret_key: str) -> None:
-        """Инициализация обработчика."""
-        self.__secret_key = secret_key
+    def __init__(self, secret_key: str):
+        """Инициализация обработчика JWT."""
+        self.secret_key = secret_key
 
-    def encode_token(
-        self, payload: JWTPayloadDTO, expires_minutes: int
-    ) -> AccessTokenDTO:
-        """Создание токена доступа."""
-        expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
-        extended_payload = JWTPayloadExtendedDTO(
-            id=payload.id,
-            token_type="access",
-            exp=int(expire.timestamp()),
-        )
-        encoded_jwt = jwt.encode(
-            extended_payload.model_dump(), self.__secret_key, algorithm="HS256"
-        )
-        return AccessTokenDTO(access_token=encoded_jwt, expire=expire)
+    def create_access_token(
+        self,
+        user_id: int,
+        expires_delta: Optional[timedelta] = None
+    ) -> str:
+        """Создание JWT токена."""
+        if expires_delta:
+            expire = datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.utcnow() + timedelta(
+                minutes=settings.access_token_expires_minutes
+            )
+
+        to_encode = {
+            "id": user_id,
+            "exp": expire,
+            "type": "access"
+        }
+        try:
+            encoded_jwt = jwt.encode(
+                to_encode,
+                self.secret_key,
+                algorithm="HS256"
+            )
+            return encoded_jwt
+        except Exception as e:
+            raise AuthenticationError(f"Failed to create token: {str(e)}")
 
     def decode_token(self, token: str) -> JWTPayloadDTO:
-        """Декодирование токена доступа."""
+        """Декодирование JWT токена."""
         try:
-            payload = jwt.decode(token, self.__secret_key, algorithms=["HS256"])
-            payload_obj = JWTPayloadDTO(id=payload["id"])
-            return payload_obj
-        except Exception as exc:
-            raise InvalidTokenException("Invalid token") from exc
-
-    def create_new_access_token_by_refresh_token(
-        self, payload_with_refresh_exp: JWTPayloadExtendedDTO, expires_minutes: int
-    ) -> TokenPairDTO:
-        """Создание нового токена доступа через refresh-токен."""
-        if payload_with_refresh_exp.exp < datetime.now(timezone.utc):
-            raise InvalidTokenException("Refresh token is expired")
-
-        new_access_token = self.encode_token(
-            JWTPayloadDTO(id=payload_with_refresh_exp.id), expires_minutes
-        )
-        return TokenPairDTO(
-            access_token=new_access_token.access_token,
-            refresh_token="",  # Здесь должен быть новый refresh токен
-        )
-
-    def create_refresh_token(
-        self, payload: JWTPayloadDTO, expires_hours: int
-    ) -> str:
-        """Создание refresh токена."""
-        expire = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
-        extended_payload = JWTPayloadExtendedDTO(
-            id=payload.id,
-            token_type="refresh",
-            exp=int(expire.timestamp()),
-        )
-        return jwt.encode(
-            extended_payload.model_dump(), self.__secret_key, algorithm="HS256"
-        )
-
-    def decode_refresh_token(self, token: str) -> JWTPayloadExtendedDTO:
-        """Декодирование refresh токена."""
-        try:
-            payload = jwt.decode(token, self.__secret_key, algorithms=["HS256"])
-            return JWTPayloadExtendedDTO(
-                id=payload["id"],
-                iat=datetime.fromisoformat(payload["iat"].replace("Z", "+00:00")),
-                exp=datetime.fromisoformat(payload["exp"].replace("Z", "+00:00")),
+            payload = jwt.decode(
+                token,
+                self.secret_key,
+                algorithms=["HS256"]
             )
-        except Exception as exc:
-            raise InvalidTokenException("Invalid refresh token") from exc
+            return JWTPayloadDTO(**payload)
+        except jwt.ExpiredSignatureError:
+            raise InvalidTokenException("Token has expired")
+        except jwt.InvalidTokenError as e:
+            raise InvalidTokenException(f"Invalid token: {str(e)}")
+        except Exception as e:
+            raise AuthenticationError(f"Failed to decode token: {str(e)}")
+
+    def create_refresh_token(self, user_id: int) -> str:
+        """Создание refresh токена."""
+        expires_delta = timedelta(hours=settings.refresh_token_expires_hours)
+        expire = datetime.utcnow() + expires_delta
+
+        to_encode = {
+            "id": user_id,
+            "exp": expire,
+            "type": "refresh"
+        }
+        try:
+            encoded_jwt = jwt.encode(
+                to_encode,
+                self.secret_key,
+                algorithm="HS256"
+            )
+            return encoded_jwt
+        except Exception as e:
+            raise AuthenticationError(f"Failed to create refresh token: {str(e)}")
+
+    def verify_refresh_token(self, token: str) -> int:
+        """Проверка refresh токена."""
+        try:
+            payload = jwt.decode(
+                token,
+                self.secret_key,
+                algorithms=["HS256"]
+            )
+            if payload.get("type") != "refresh":
+                raise InvalidTokenException("Not a refresh token")
+            return payload["id"]
+        except jwt.ExpiredSignatureError:
+            raise InvalidTokenException("Refresh token has expired")
+        except jwt.InvalidTokenError as e:
+            raise InvalidTokenException(f"Invalid refresh token: {str(e)}")
+        except Exception as e:
+            raise AuthenticationError(f"Failed to verify refresh token: {str(e)}")

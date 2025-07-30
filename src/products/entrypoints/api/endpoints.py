@@ -1,4 +1,4 @@
-"""API эндпойнты для работы с товарами и ценообразованием."""
+"""API эндпоинты для работы с товарами и ценообразованием."""
 
 import logging
 import pandas as pd
@@ -13,6 +13,14 @@ from typing import Annotated, List
 # NOTE: Use direct dependency function instead of precomputed TokenDependency
 from base.dependencies import get_token_from_header
 from base.data_structures import JWTPayloadDTO
+from base.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    DatabaseError,
+    ProductNotFoundError,
+    TaskQueueError,
+    MLServiceError
+)
 from products.domain.models import (
     Product, ProductData, PricingRequest, PricingResponse
 )
@@ -31,26 +39,36 @@ router = APIRouter()
 ml_service = MLPricingService()
 
 
-@router.get("/", response_model=list[Product], status_code=200)
-async def get_product_list(
+@router.get("/products/", response_model=List[Product])
+async def get_user_products(
     service: ProductServiceDependency,
-    data_from_token: Annotated[JWTPayloadDTO, Depends(get_token_from_header)],
-):
+    token: JWTPayloadDTO = Depends(get_token_from_header)
+) -> List[Product]:
     """Получение списка товаров пользователя."""
-    return await service.get_user_products(data_from_token.id)
+    try:
+        return await service.get_user_products(token.id)
+    except (AuthenticationError, AuthorizationError) as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except DatabaseError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/", response_model=Product, status_code=201)
-async def create_product(
-    service: ProductServiceDependency,
-    data_from_token: Annotated[JWTPayloadDTO, Depends(get_token_from_header)],
+@router.post("/products/", status_code=201, response_model=Product)
+async def add_product(
     product_data: ProductData,
+    service: ProductServiceDependency,
+    token: JWTPayloadDTO = Depends(get_token_from_header)
 ) -> Product:
-    """Создание товара."""
-    return await service.add_product(data_from_token.id, product_data)
+    """Добавление нового товара."""
+    try:
+        return await service.add_product(token.id, product_data)
+    except (AuthenticationError, AuthorizationError) as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except DatabaseError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/upload-excel/", status_code=201)
+@router.post("/products/upload-excel/", status_code=201)
 async def upload_products_excel(
     file: UploadFile,
     data_from_token: Annotated[JWTPayloadDTO, Depends(get_token_from_header)],
@@ -109,31 +127,65 @@ async def upload_products_excel(
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
 
-@router.get("/{product_id}/", response_model=Product, status_code=200)
+@router.get("/products/{product_id}", response_model=Product)
 async def get_product(
     product_id: int,
     service: ProductServiceDependency,
-    data_from_token: Annotated[JWTPayloadDTO, Depends(get_token_from_header)],
-):
+    token: JWTPayloadDTO = Depends(get_token_from_header)
+) -> Product:
     """Получение информации о товаре."""
-    return await service.get_product(product_id)
+    try:
+        return await service.get_product(product_id)
+    except ProductNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DatabaseError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/products/{product_id}", status_code=204)
+async def delete_product(
+    product_id: int,
+    service: ProductServiceDependency,
+    token: JWTPayloadDTO = Depends(get_token_from_header)
+) -> None:
+    """Удаление товара."""
+    try:
+        await service.delete_product(product_id, token.id)
+    except ProductNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (AuthenticationError, AuthorizationError) as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except DatabaseError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/pricing/predict/", response_model=PricingResponse)
-async def predict_price_direct(
-    pricing_request: PricingRequest,
-    data_from_token: Annotated[JWTPayloadDTO, Depends(get_token_from_header)],
-):
-    """Прямое прогнозирование цены товара."""
+async def predict_price(
+    request: PricingRequest,
+    service: ProductServiceDependency,
+    token: JWTPayloadDTO = Depends(get_token_from_header)
+) -> PricingResponse:
+    """Прогнозирование цены для товара."""
     try:
-        # Получаем прогноз цены без проверки баланса и списания средств
-        pricing_response = await ml_service.get_price_prediction(
-            pricing_request.product_data
+        product, task = await service.create_pricing_task(
+            None,  # Новый товар
+            request.product_data,
+            token.id
         )
-        return pricing_response
-
+        return PricingResponse(
+            predicted_price=task.result["predicted_price"],
+            confidence_score=task.result["confidence_score"],
+            price_range=task.result["price_range"],
+            category_analysis=task.result["category_analysis"]
+        )
+    except (AuthenticationError, AuthorizationError) as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except TaskQueueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except MLServiceError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error in price prediction: {str(e)}")
+        logger.error(f"Error predicting price: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

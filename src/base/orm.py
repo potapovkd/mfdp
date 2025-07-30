@@ -1,34 +1,38 @@
-"""ORM конфигурация и базовые модели."""
+"""Базовые классы и функции для работы с ORM."""
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+import logging
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-from base.config import get_db_url
+from base.config import get_settings
 
+settings = get_settings()
 
-class Base(DeclarativeBase):
-    """Базовый класс для всех ORM моделей."""
+# Создаем базовый класс для моделей
+Base = declarative_base()
 
-
-# Создаем движок базы данных
-engine = create_async_engine(get_db_url(), echo=False)
+# Создаем асинхронный движок
+engine = create_async_engine(
+    f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}@"
+    f"{settings.db_host}:{settings.db_port}/{settings.db_name}",
+    echo=False,
+    future=True
+)
 
 # Создаем фабрику сессий
-async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async_session = sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
 
 def get_session_factory():
     """Получение фабрики сессий."""
-    return async_session_maker
+    return async_session
 
 
-async def create_database_tables():
-    """Создание таблиц базы данных."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
-async def create_database_tables_async():
-    """Асинхронное создание таблиц базы данных."""
+async def init_db():
+    """Инициализация базы данных."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
