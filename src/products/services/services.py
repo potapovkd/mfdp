@@ -1,6 +1,9 @@
 """Сервисы для управления товарами и ценового прогнозирования."""
 
+from typing import Optional, Tuple
+
 from base.config import TaskStatus
+from base.exceptions import ProductNotFoundError, PermissionDeniedError, DatabaseError
 from products.domain.models import Product, ProductData, Task, PricingResponse
 from products.services.unit_of_work import ProductAbstractUnitOfWork
 from pricing.pricing_service import PricingService
@@ -15,21 +18,40 @@ class ProductService:
 
     async def get_product(self, product_id: int) -> Product:
         """Получение товара."""
-        async with self._uow as uow:
-            return await uow.products.get(product_id)
+        try:
+            async with self._uow as uow:
+                product = await uow.products.get(product_id)
+                if not product:
+                    raise ProductNotFoundError(f"Товар с ID {product_id} не найден")
+                return product
+        except Exception as e:
+            raise DatabaseError(f"Ошибка при получении товара: {str(e)}")
 
     async def add_product(self, user_id: int, product_data: ProductData) -> Product:
         """Создание товара."""
-        async with self._uow as uow:
-            product = await uow.products.add(user_id, product_data)
-            await uow.commit()
-            return product
+        try:
+            async with self._uow as uow:
+                product = await uow.products.add(user_id, product_data)
+                await uow.commit()
+                return product
+        except Exception as e:
+            raise DatabaseError(f"Ошибка при создании товара: {str(e)}")
 
     async def delete_product(self, product_id: int, user_id: int) -> None:
         """Удаление товара."""
-        async with self._uow as uow:
-            await uow.products.delete(product_id, user_id)
-            await uow.commit()
+        try:
+            async with self._uow as uow:
+                product = await uow.products.get(product_id)
+                if not product:
+                    raise ProductNotFoundError(f"Товар с ID {product_id} не найден")
+                if product.user_id != user_id:
+                    raise PermissionDeniedError("Нет прав на удаление этого товара")
+                await uow.products.delete(product_id, user_id)
+                await uow.commit()
+        except (ProductNotFoundError, PermissionDeniedError) as e:
+            raise e
+        except Exception as e:
+            raise DatabaseError(f"Ошибка при удалении товара: {str(e)}")
 
     async def create_pricing_task(
         self,
@@ -38,38 +60,41 @@ class ProductService:
         user_id: int,
     ) -> tuple[Product, Task]:
         """Создание задачи прогнозирования цены для товара."""
-        async with self._uow as uow:
-            product, task = await uow.products.add_pricing_task(
-                product_id,
-                product_data,
-                user_id,
-            )
-            await uow.commit()
-            return product, task
+        try:
+            async with self._uow as uow:
+                product = await uow.products.get(product_id)
+                if not product:
+                    raise ProductNotFoundError(f"Товар с ID {product_id} не найден")
+                if product.user_id != user_id:
+                    raise PermissionDeniedError("Нет прав на создание задачи для этого товара")
+                
+                product, task = await uow.products.add_pricing_task(
+                    product_id,
+                    product_data,
+                    user_id,
+                )
+                await uow.commit()
+                return product, task
+        except (ProductNotFoundError, PermissionDeniedError) as e:
+            raise e
+        except Exception as e:
+            raise DatabaseError(f"Ошибка при создании задачи прогнозирования: {str(e)}")
 
     async def get_user_products(self, user_id: int) -> list[Product]:
         """Получение списка товаров пользователя."""
-        async with self._uow as uow:
-            return await uow.products.get_user_products(user_id)
+        try:
+            async with self._uow as uow:
+                return await uow.products.get_by_user(user_id)
+        except Exception as e:
+            raise DatabaseError(f"Ошибка при получении списка товаров: {str(e)}")
 
-    async def update_task(
-        self, task_id: int, new_status: TaskStatus | None = None,
-        result: str | None = None
-    ) -> None:
-        """Обновление статуса задачи."""
-        async with self._uow as uow:
-            await uow.products.update_task_status(task_id, new_status, result)
-            await uow.commit()
-
-    async def get_task(self, task_id: int) -> Task:
-        """Получение задачи по ID."""
-        async with self._uow as uow:
-            return await uow.products.get_task(task_id)
-
-    async def get_all_tasks(self) -> list[Task]:
-        """Получение всех задач."""
-        async with self._uow as uow:
-            return await uow.products.get_all_tasks()
+    async def get_task_status(self, task_id: str) -> Optional[Task]:
+        """Получение статуса задачи прогнозирования."""
+        try:
+            async with self._uow as uow:
+                return await uow.products.get_task(task_id)
+        except Exception as e:
+            raise DatabaseError(f"Ошибка при получении статуса задачи: {str(e)}")
 
 
 # All deprecated service classes removed after migration

@@ -1,37 +1,119 @@
 """Зависимости для FastAPI приложения."""
 
 import logging
-from typing import Annotated
+import time
+from typing import Annotated, Optional
+from datetime import datetime, timedelta
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from base.config import get_settings
 from base.orm import get_session_factory
 from base.utils import JWTHandler
 from base.data_structures import JWTPayloadDTO
+from base.exceptions import AuthenticationError, AuthorizationError
 from products.services.services import ProductService
 from products.services.unit_of_work import PostgreSQLProductUnitOfWork
 from users.services.services import UserService
 from users.services.unit_of_work import PostgreSQLUserUnitOfWork
 
-security = HTTPBearer()
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
 
-def get_token_from_header(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+class JWTBearerWithRateLimit(HTTPBearer):
+    """Расширенный Bearer с rate limiting и дополнительными проверками."""
+
+    def __init__(self):
+        """Инициализация."""
+        super().__init__(auto_error=True)
+        self.rate_limit = {}  # IP -> [(timestamp, token), ...]
+        self.max_requests = 100  # Максимум запросов
+        self.window_size = 60  # Размер окна в секундах
+
+    def _clean_old_requests(self, ip: str):
+        """Очистка старых запросов."""
+        now = time.time()
+        self.rate_limit[ip] = [
+            req for req in self.rate_limit.get(ip, [])
+            if now - req[0] < self.window_size
+        ]
+
+    def _is_rate_limited(self, ip: str, token: str) -> bool:
+        """Проверка rate limit."""
+        self._clean_old_requests(ip)
+        
+        # Добавляем текущий запрос
+        now = time.time()
+        if ip not in self.rate_limit:
+            self.rate_limit[ip] = []
+        self.rate_limit[ip].append((now, token))
+        
+        # Проверяем лимит
+        return len(self.rate_limit[ip]) > self.max_requests
+
+    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials:
+        """Переопределение вызова для добавления проверок."""
+        credentials = await super().__call__(request)
+        
+        # Получаем IP
+        ip = request.client.host
+        
+        # Проверяем rate limit
+        if self._is_rate_limited(ip, credentials.credentials):
+            logger.warning(f"Rate limit exceeded for IP: {ip}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests",
+            )
+        
+        return credentials
+
+
+security = JWTBearerWithRateLimit()
+
+
+async def get_token_from_header(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    user_service: Annotated[UserService, Depends(get_user_service)]
 ) -> JWTPayloadDTO:
     """Получение и валидация JWT токена из заголовка."""
-    logger = logging.getLogger(__name__)
     try:
         token = credentials.credentials
         logger.info(f"Attempting to decode token: {token[:20]}...")
+        
+        # Базовая валидация токена
         jwt_handler = JWTHandler(settings.secret_key)
         payload = jwt_handler.decode_token(token)
-        logger.info(f"Token decoded successfully for user ID: {payload.id}")
+        
+        # Проверяем существование пользователя
+        user = await user_service.get_user(payload.id)
+        if not user:
+            logger.error(f"User not found: {payload.id}")
+            raise AuthenticationError("User not found")
+        
+        # Проверяем не заблокирован ли пользователь
+        if user.is_blocked:
+            logger.error(f"User is blocked: {payload.id}")
+            raise AuthorizationError("User is blocked")
+        
+        # Проверяем не истекла ли сессия
+        if payload.exp and datetime.fromtimestamp(payload.exp) < datetime.now():
+            logger.error(f"Token expired for user: {payload.id}")
+            raise AuthenticationError("Token expired")
+        
+        # Обновляем информацию о последнем входе
+        await user_service.update_last_login(payload.id)
+        
+        logger.info(f"Token validated successfully for user ID: {payload.id}")
         return payload
+
+    except (AuthenticationError, AuthorizationError) as e:
+        raise e
     except Exception as e:
         logger.error(f"Token validation failed: {str(e)}")
         raise HTTPException(
@@ -41,26 +123,37 @@ def get_token_from_header(
         )
 
 
-def get_user_service() -> UserService:
+async def get_user_service() -> UserService:
     """Получение сервиса пользователей."""
     session_factory = get_session_factory()
     uow = PostgreSQLUserUnitOfWork(session_factory)
     return UserService(uow)
 
 
-def get_product_service() -> ProductService:
+async def get_product_service() -> ProductService:
     """Получение сервиса товаров."""
     session_factory = get_session_factory()
     uow = PostgreSQLProductUnitOfWork(session_factory)
     return ProductService(uow)
 
 
-def get_product_uow() -> PostgreSQLProductUnitOfWork:
+async def get_product_uow() -> PostgreSQLProductUnitOfWork:
     """Получение Unit of Work для товаров."""
     session_factory = get_session_factory()
     return PostgreSQLProductUnitOfWork(session_factory)
 
 
+async def get_db() -> AsyncSession:
+    """Получение сессии базы данных."""
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
 # Типы для внедрения зависимостей
 UserServiceDependency = Annotated[UserService, Depends(get_user_service)]
 ProductServiceDependency = Annotated[ProductService, Depends(get_product_service)]
+DatabaseDependency = Annotated[AsyncSession, Depends(get_db)]

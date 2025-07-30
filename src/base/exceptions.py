@@ -1,53 +1,50 @@
-"""Исключения."""
+"""Кастомные исключения приложения."""
 
-from fastapi import HTTPException
-
-
-class EntityNotFoundException(HTTPException):
-    """Исключение о том, что сущность не найдена."""
-
-    def __init__(self, detail: str = "Entity not found") -> None:
-        """Инициализация исключения."""
-        super().__init__(status_code=404, detail=detail)
+class AppException(Exception):
+    """Базовое исключение приложения."""
+    pass
 
 
-class AlreadyExistsException(HTTPException):
-    """Исключение о том, что сущность уже существует."""
-
-    def __init__(self, detail: str = "Entity already exists") -> None:
-        """Инициализация исключения."""
-        super().__init__(status_code=400, detail=detail)
+class AuthenticationError(AppException):
+    """Ошибка аутентификации."""
+    pass
 
 
-class AuthException(HTTPException):
-    """Исключение авторизации."""
-
-    def __init__(self, detail: str = "Authentication required") -> None:
-        """Инициализация исключения."""
-        super().__init__(status_code=401, detail=detail)
+class AuthorizationError(AppException):
+    """Ошибка авторизации."""
+    pass
 
 
-class InvalidTokenException(Exception):
-    """Исключение о том, что токен недействителен."""
-
-    def __init__(self, detail: str) -> None:
-        """Инициализация исключения."""
-        super().__init__(detail)
-        self.detail = detail
+class ValidationError(AppException):
+    """Ошибка валидации данных."""
+    pass
 
 
-class InvalidCredentialsException(HTTPException):
-    """Исключение о том, что учетные данные недействительны."""
-
-    def __init__(self, detail: str = "Invalid credentials") -> None:
-        """Инициализация исключения."""
-        super().__init__(status_code=400, detail=detail)
+class DatabaseError(AppException):
+    """Ошибка работы с базой данных."""
+    pass
 
 
-class DoesntExistException(Exception):
-    """Исключение о том, что сущность не существует."""
+class ProductNotFoundError(AppException):
+    """Товар не найден."""
+    pass
 
-    def __init__(self, detail: str = "Entity doesn't exist") -> None:
-        """Инициализация исключения."""
-        super().__init__(detail)
-        self.detail = detail
+
+class PermissionDeniedError(AppException):
+    """Отказано в доступе."""
+    pass
+
+
+class InsufficientFundsError(AppException):
+    """Недостаточно средств на балансе."""
+    pass
+
+
+class MLServiceError(AppException):
+    """Ошибка ML сервиса."""
+    pass
+
+
+class TaskQueueError(AppException):
+    """Ошибка очереди задач."""
+    pass

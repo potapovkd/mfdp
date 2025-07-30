@@ -1,12 +1,14 @@
-"""Модуль для обучения модели ценообразования на основе данных Mercari.
-Основан на лучшем решении из mfdp/Mercari_Pricing_Improved.ipynb
-"""
+"""Модуль для обучения модели ценообразования."""
 
 import pandas as pd
 import numpy as np
 import pickle
 import re
+import json
+import logging
+from datetime import datetime
 from pathlib import Path
+from typing import Dict, Any, Tuple
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -22,19 +24,88 @@ except ImportError:
     catboost_available = False
 
 
+class ModelMetrics:
+    """Класс для хранения и отслеживания метрик модели."""
+
+    def __init__(self):
+        """Инициализация метрик."""
+        self.train_rmse = 0.0
+        self.test_rmse = 0.0
+        self.train_mae = 0.0
+        self.test_mae = 0.0
+        self.train_r2 = 0.0
+        self.test_r2 = 0.0
+        self.timestamp = datetime.now().isoformat()
+        self.model_version = None
+        self.dataset_stats = {}
+        self.feature_importance = {}
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Конвертация метрик в словарь."""
+        return {
+            "model_version": self.model_version,
+            "timestamp": self.timestamp,
+            "metrics": {
+                "train": {
+                    "rmse": float(self.train_rmse),
+                    "mae": float(self.train_mae),
+                    "r2": float(self.train_r2)
+                },
+                "test": {
+                    "rmse": float(self.test_rmse),
+                    "mae": float(self.test_mae),
+                    "r2": float(self.test_r2)
+                }
+            },
+            "dataset_stats": self.dataset_stats,
+            "feature_importance": {k: float(v) for k, v in self.feature_importance.items()}
+        }
+
+    def save(self, path: Path) -> None:
+        """Сохранение метрик в JSON файл."""
+        with open(path, 'w') as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+
 class PricingModelTrainer:
     """Класс для обучения модели ценообразования."""
 
-    def __init__(self, model_path: str = "models/catboost_pricing_model.cbm",
-                 preprocessing_path: str = "models/preprocessing_pipeline.pkl"):
-        self.model_path = Path(model_path)
-        self.preprocessing_path = Path(preprocessing_path)
+    def __init__(
+        self,
+        model_dir: str = "models",
+        model_name: str = "catboost_pricing_model",
+        version: str = None
+    ):
+        """Инициализация тренера моделей."""
+        self.model_dir = Path(model_dir)
+        self.model_name = model_name
+        self.version = version or datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Создаем директорию для версии модели
+        self.version_dir = self.model_dir / self.version
+        self.version_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Пути к файлам модели
+        self.model_path = self.version_dir / f"{model_name}.cbm"
+        self.preprocessing_path = self.version_dir / "preprocessing_pipeline.pkl"
+        self.metrics_path = self.version_dir / "metrics.json"
+        
+        # Инициализация
         self.model = None
         self.preprocessing_pipeline = {}
+        self.metrics = ModelMetrics()
+        self.metrics.model_version = self.version
+        
+        # Настройка логирования
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        handler = logging.FileHandler(self.version_dir / "training.log")
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        self.logger.addHandler(handler)
 
     def preprocess_data(self, df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
-        """Предобработка данных по алгоритму из лучшего ноутбука."""
-        print("Начинаем предобработку данных...")
+        """Предобработка данных."""
+        self.logger.info("Начинаем предобработку данных...")
 
         # Расширенная очистка данных
         df = df.copy()
@@ -43,14 +114,28 @@ class PricingModelTrainer:
         df["item_description"] = df["item_description"].replace("No description yet", "")
         df["item_description"] = df["item_description"].fillna("")
         df = df[df["price"] > 0]
-        # Убираем только крайние выбросы (99.5 перцентиль)
+        
+        # Сохраняем статистики датасета
+        self.metrics.dataset_stats = {
+            "total_samples": len(df),
+            "categories": df["category_name"].nunique(),
+            "brands": df["brand_name"].nunique(),
+            "price_stats": {
+                "min": float(df["price"].min()),
+                "max": float(df["price"].max()),
+                "mean": float(df["price"].mean()),
+                "median": float(df["price"].median())
+            }
+        }
+
+        # Убираем выбросы
         df = df[df["price"] <= df["price"].quantile(0.995)]
         df = df.reset_index(drop=True)
 
-        print(f"Размер датасета после очистки: {df.shape}")
+        self.logger.info(f"Размер датасета после очистки: {df.shape}")
 
-        # Расширенный Feature Engineering
-        print("Создание новых признаков...")
+        # Feature Engineering
+        self.logger.info("Создание новых признаков...")
 
         # Базовые числовые признаки
         df["desc_len"] = df["item_description"].str.len()
@@ -73,8 +158,8 @@ class PricingModelTrainer:
         df["brand_cat_main"] = df["brand_name"] + "_" + df["cat_main"]
         df["condition_shipping"] = df["item_condition_id"].astype(str) + "_" + df["shipping"].astype(str)
 
-        # TF-IDF векторизация текстовых полей
-        print("Создание TF-IDF признаков...")
+        # TF-IDF векторизация
+        self.logger.info("Создание TF-IDF признаков...")
 
         tfidf_name = TfidfVectorizer(max_features=30, stop_words="english", lowercase=True)
         tfidf_desc = TfidfVectorizer(max_features=20, stop_words="english", lowercase=True)
@@ -86,7 +171,7 @@ class PricingModelTrainer:
         tfidf_desc_df = pd.DataFrame(tfidf_desc_features, columns=[f"desc_tfidf_{i}" for i in range(20)])
 
         # Кодирование категориальных признаков
-        print("Кодирование категориальных признаков...")
+        self.logger.info("Кодирование категориальных признаков...")
 
         le_brand = LabelEncoder()
         le_cat_main = LabelEncoder()
@@ -102,7 +187,7 @@ class PricingModelTrainer:
         df["brand_cat_enc"] = le_brand_cat.fit_transform(df["brand_cat_main"])
         df["cond_ship_enc"] = le_cond_ship.fit_transform(df["condition_shipping"])
 
-        # Сохраняем preprocessors для будущих предсказаний
+        # Сохраняем preprocessors
         self.preprocessing_pipeline = {
             "tfidf_name": tfidf_name,
             "tfidf_desc": tfidf_desc,
@@ -132,35 +217,40 @@ class PricingModelTrainer:
         X = pd.concat([X_base, tfidf_name_df, tfidf_desc_df], axis=1)
         y = np.log1p(df["price"])  # Логарифмируем цены
 
-        print(f"Итоговый размер матрицы признаков: {X.shape}")
-        print(f"Целевая переменная (log): min={y.min():.3f}, max={y.max():.3f}, mean={y.mean():.3f}")
+        self.logger.info(f"Итоговый размер матрицы признаков: {X.shape}")
+        self.logger.info(f"Целевая переменная (log): min={y.min():.3f}, max={y.max():.3f}, mean={y.mean():.3f}")
 
         return X, y
 
     def train_model(self, X: pd.DataFrame, y: np.ndarray) -> None:
-        """Обучение CatBoost модели с лучшими параметрами."""
+        """Обучение CatBoost модели."""
         if not catboost_available:
             raise ImportError("CatBoost недоступен для обучения")
 
-        print("Обучение CatBoost модели с улучшенными параметрами...")
+        self.logger.info("Обучение CatBoost модели...")
 
         # Разделение на train/test
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Создаем модель с лучшими параметрами из ноутбука
+        # Создаем модель с оптимизированными параметрами
         self.model = CatBoostRegressor(
-            iterations=100,  # Увеличиваем для лучшего качества
-            depth=5,
-            learning_rate=0.15,
+            iterations=1000,
+            depth=6,
+            learning_rate=0.1,
             l2_leaf_reg=3,
             random_state=42,
-            verbose=20  # Показываем прогресс
+            verbose=100
         )
 
         # Обучаем модель
-        self.model.fit(X_train, y_train, eval_set=(X_test, y_test), use_best_model=True)
+        self.model.fit(
+            X_train, y_train,
+            eval_set=(X_test, y_test),
+            use_best_model=True,
+            early_stopping_rounds=50
+        )
 
-        # Оценка качества
+        # Получаем предсказания
         train_pred = self.model.predict(X_train)
         test_pred = self.model.predict(X_test)
 
@@ -170,45 +260,55 @@ class PricingModelTrainer:
         y_train_exp = np.expm1(y_train)
         y_test_exp = np.expm1(y_test)
 
-        # Рассчитываем метрики
-        train_rmse = np.sqrt(mean_squared_error(y_train_exp, train_pred_exp))
-        test_rmse = np.sqrt(mean_squared_error(y_test_exp, test_pred_exp))
-        train_mae = mean_absolute_error(y_train_exp, train_pred_exp)
-        test_mae = mean_absolute_error(y_test_exp, test_pred_exp)
-        train_r2 = r2_score(y_train_exp, train_pred_exp)
-        test_r2 = r2_score(y_test_exp, test_pred_exp)
+        # Сохраняем метрики
+        self.metrics.train_rmse = np.sqrt(mean_squared_error(y_train_exp, train_pred_exp))
+        self.metrics.test_rmse = np.sqrt(mean_squared_error(y_test_exp, test_pred_exp))
+        self.metrics.train_mae = mean_absolute_error(y_train_exp, train_pred_exp)
+        self.metrics.test_mae = mean_absolute_error(y_test_exp, test_pred_exp)
+        self.metrics.train_r2 = r2_score(y_train_exp, train_pred_exp)
+        self.metrics.test_r2 = r2_score(y_test_exp, test_pred_exp)
 
-        print("\n=== РЕЗУЛЬТАТЫ ОБУЧЕНИЯ ===")
-        print(f"Train RMSE: {train_rmse:.4f}")
-        print(f"Test RMSE: {test_rmse:.4f}")
-        print(f"Train MAE: {train_mae:.4f}")
-        print(f"Test MAE: {test_mae:.4f}")
-        print(f"Train R²: {train_r2:.4f}")
-        print(f"Test R²: {test_r2:.4f}")
+        # Сохраняем важность признаков
+        feature_importance = self.model.feature_importances_
+        feature_names = X.columns
+        self.metrics.feature_importance = dict(zip(feature_names, feature_importance))
 
-        print("\nМодель готова к сохранению!")
+        self.logger.info("\n=== РЕЗУЛЬТАТЫ ОБУЧЕНИЯ ===")
+        self.logger.info(f"Train RMSE: {self.metrics.train_rmse:.4f}")
+        self.logger.info(f"Test RMSE: {self.metrics.test_rmse:.4f}")
+        self.logger.info(f"Train MAE: {self.metrics.train_mae:.4f}")
+        self.logger.info(f"Test MAE: {self.metrics.test_mae:.4f}")
+        self.logger.info(f"Train R²: {self.metrics.train_r2:.4f}")
+        self.logger.info(f"Test R²: {self.metrics.test_r2:.4f}")
 
     def save_model(self) -> None:
-        """Сохранение обученной модели и pipeline предобработки."""
+        """Сохранение обученной модели и всех артефактов."""
         if self.model is None:
             raise ValueError("Модель не обучена. Сначала вызовите train_model()")
 
-        # Создаем директории если их нет
-        self.model_path.parent.mkdir(parents=True, exist_ok=True)
-        self.preprocessing_path.parent.mkdir(parents=True, exist_ok=True)
-
         # Сохраняем модель
         self.model.save_model(str(self.model_path))
-        print(f"Модель сохранена в {self.model_path}")
+        self.logger.info(f"Модель сохранена в {self.model_path}")
 
         # Сохраняем preprocessing pipeline
         with open(self.preprocessing_path, "wb") as f:
             pickle.dump(self.preprocessing_pipeline, f)
-        print(f"Pipeline предобработки сохранен в {self.preprocessing_path}")
+        self.logger.info(f"Pipeline предобработки сохранен в {self.preprocessing_path}")
 
-    def load_and_train(self, data_path: str = "data/train.tsv", sample_size: int = 100000) -> None:
+        # Сохраняем метрики
+        self.metrics.save(self.metrics_path)
+        self.logger.info(f"Метрики сохранены в {self.metrics_path}")
+
+        # Создаем symbolic link на последнюю версию
+        latest_link = self.model_dir / "latest"
+        if latest_link.exists():
+            latest_link.unlink()
+        latest_link.symlink_to(self.version_dir.name)
+        self.logger.info(f"Создан symbolic link на последнюю версию: {latest_link}")
+
+    def load_and_train(self, data_path: str = "data/train.tsv", sample_size: int = None) -> None:
         """Полный цикл: загрузка данных, предобработка, обучение, сохранение."""
-        print(f"Загрузка данных из {data_path}...")
+        self.logger.info(f"Загрузка данных из {data_path}...")
 
         # Проверяем наличие файла данных
         if not Path(data_path).exists():
@@ -220,9 +320,9 @@ class PricingModelTrainer:
         # Берем подвыборку для быстрого обучения
         if sample_size and len(df) > sample_size:
             df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
-            print(f"Используем выборку размером {sample_size} записей")
+            self.logger.info(f"Используем выборку размером {sample_size} записей")
 
-        print(f"Загружено {len(df)} записей")
+        self.logger.info(f"Загружено {len(df)} записей")
 
         # Предобработка
         X, y = self.preprocess_data(df)
@@ -233,10 +333,13 @@ class PricingModelTrainer:
         # Сохранение
         self.save_model()
 
-        print("\n✅ Модель успешно обучена и сохранена!")
+        self.logger.info("\n✅ Модель успешно обучена и сохранена!")
 
 
 if __name__ == "__main__":
+    # Настройка корневого логгера
+    logging.basicConfig(level=logging.INFO)
+
     # Инициализируем trainer
     trainer = PricingModelTrainer()
 
@@ -244,8 +347,8 @@ if __name__ == "__main__":
     try:
         trainer.load_and_train()
     except Exception as e:
-        print(f"❌ Ошибка при обучении модели: {e}")
-        print("Убедитесь что:")
-        print("1. Установлен CatBoost: pip install catboost")
-        print("2. Файл данных существует: mfdp/data/train.tsv")
-        print("3. Папка models/ создана и доступна для записи")
+        logging.error(f"❌ Ошибка при обучении модели: {e}")
+        logging.info("Убедитесь что:")
+        logging.info("1. Установлен CatBoost: pip install catboost")
+        logging.info("2. Файл данных существует: data/train.tsv")
+        logging.info("3. Папка models/ создана и доступна для записи")

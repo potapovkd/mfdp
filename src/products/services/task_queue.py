@@ -1,208 +1,239 @@
-"""Сервис для управления очередью задач ML воркеров.
-Интегрирует основное приложение с масштабируемыми ML воркерами.
-"""
+"""Сервис для работы с очередями задач."""
 
 import json
+import logging
 import time
-import asyncio
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+from datetime import datetime
 
-import redis.asyncio as redis
+import redis
 import pika
-from loguru import logger
+from pika.exceptions import AMQPConnectionError, AMQPChannelError
+from redis.exceptions import RedisError
 
-from base.config import get_config
-from products.domain.models import ProductData, PricingResponse
+from base.config import get_settings
+from base.exceptions import TaskQueueError
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class TaskQueueService:
-    """Сервис для управления очередями задач ML воркеров."""
+    """Сервис для работы с очередями задач."""
 
     def __init__(self):
-        self.config = get_config()
-        self.redis_client: Optional[redis.Redis] = None
+        """Инициализация сервиса."""
+        self.redis_client = None
         self.rabbitmq_connection = None
         self.rabbitmq_channel = None
+        self._setup_connections()
 
-    async def _get_redis_client(self) -> redis.Redis:
-        """Получение асинхронного Redis клиента."""
-        if not self.redis_client:
+    def _setup_connections(self) -> None:
+        """Настройка подключений к Redis и RabbitMQ."""
+        try:
+            # Redis для очередей задач
             self.redis_client = redis.Redis(
-                host=self.config.redis_host or "redis",
-                port=self.config.redis_port or 6379,
-                db=self.config.redis_db or 0,
-                decode_responses=True
+                host=settings.redis_host,
+                port=settings.redis_port,
+                db=settings.redis_db,
+                decode_responses=True,
+                socket_connect_timeout=10,
+                socket_timeout=10,
+                retry_on_timeout=True,
+                health_check_interval=30
             )
-        return self.redis_client
+            self.redis_client.ping()
+            logger.info(f"Connected to Redis at {settings.redis_host}:{settings.redis_port}")
 
-    def _get_rabbitmq_channel(self):
-        """Получение канала RabbitMQ для прослушивания результатов."""
-        if not self.rabbitmq_connection or self.rabbitmq_connection.is_closed:
-            self.rabbitmq_connection = pika.BlockingConnection(
-                pika.ConnectionParameters(
-                    host=self.config.rabbitmq_host or "rabbitmq",
-                    port=self.config.rabbitmq_port or 5672
-                )
+            # RabbitMQ для результатов
+            credentials = pika.PlainCredentials(
+                settings.rabbitmq_user,
+                settings.rabbitmq_pass
             )
+            parameters = pika.ConnectionParameters(
+                host=settings.rabbitmq_host,
+                port=settings.rabbitmq_port,
+                credentials=credentials,
+                heartbeat=600,
+                blocked_connection_timeout=300,
+                connection_attempts=3,
+                retry_delay=5
+            )
+            self.rabbitmq_connection = pika.BlockingConnection(parameters)
             self.rabbitmq_channel = self.rabbitmq_connection.channel()
 
-            # Объявляем exchange и очередь для результатов
+            # Объявляем exchange и очереди
+            self._setup_rabbitmq_topology()
+            logger.info(f"Connected to RabbitMQ at {settings.rabbitmq_host}:{settings.rabbitmq_port}")
+
+        except (RedisError, AMQPConnectionError) as e:
+            logger.error(f"Failed to setup connections: {e}")
+            raise TaskQueueError(f"Failed to setup queue connections: {str(e)}")
+
+    def _setup_rabbitmq_topology(self) -> None:
+        """Настройка топологии RabbitMQ."""
+        try:
+            # Основной exchange для результатов
             self.rabbitmq_channel.exchange_declare(
                 exchange="pricing_results",
                 exchange_type="direct",
                 durable=True
             )
 
-        return self.rabbitmq_channel
-
-    async def submit_pricing_task(
-        self,
-        task_id: str,
-        product_data: ProductData
-    ) -> bool:
-        """Отправка задачи на прогнозирование цены в очередь."""
-        try:
-            redis_client = await self._get_redis_client()
-
-            task_data = {
-                "task_id": task_id,
-                "product_data": product_data.model_dump(),
-                "timestamp": time.time()
-            }
-
-            task_queue = self.config.task_queue or "pricing_tasks"
-
-            # Отправляем задачу в Redis очередь
-            await redis_client.rpush(task_queue, json.dumps(task_data))
-
-            logger.info(f"Task {task_id} submitted to queue {task_queue}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to submit task {task_id}: {e}")
-            return False
-
-    async def get_task_result(
-        self,
-        task_id: str,
-        timeout: int = 30
-    ) -> Optional[PricingResponse]:
-        """Получение результата задачи с таймаутом."""
-        try:
-            # Создаем временную очередь для результата
-            result_queue = f"result_{task_id}"
-
-            channel = self._get_rabbitmq_channel()
-
-            # Объявляем временную очередь
-            channel.queue_declare(
-                queue=result_queue,
-                exclusive=True,
-                auto_delete=True
+            # Очередь для результатов
+            self.rabbitmq_channel.queue_declare(
+                queue="pricing_results",
+                durable=True,
+                arguments={
+                    "x-message-ttl": 86400000,  # 24 часа
+                    "x-max-length": 10000,
+                    "x-overflow": "reject-publish"
+                }
             )
 
-            # Привязываем к exchange
-            channel.queue_bind(
+            # Привязка очереди к exchange
+            self.rabbitmq_channel.queue_bind(
                 exchange="pricing_results",
-                queue=result_queue,
+                queue="pricing_results",
                 routing_key="prediction"
             )
 
-            received_result = None
-
-            def callback(ch, method, properties, body):
-                nonlocal received_result
-                try:
-                    message = json.loads(body)
-                    if message.get("task_id") == task_id:
-                        received_result = message
-                        ch.stop_consuming()
-                except Exception as e:
-                    logger.error(f"Error processing result: {e}")
-
-            # Настраиваем консьюмер
-            channel.basic_consume(
-                queue=result_queue,
-                on_message_callback=callback,
-                auto_ack=True
+            # Dead Letter Exchange для неудачных задач
+            self.rabbitmq_channel.exchange_declare(
+                exchange="pricing_dlx",
+                exchange_type="direct",
+                durable=True
             )
 
-            # Ждем результат с таймаутом
-            start_time = time.time()
-            while time.time() - start_time < timeout and not received_result:
-                channel.connection.process_data_events(time_limit=1)
-                await asyncio.sleep(0.1)
+            # Dead Letter Queue
+            self.rabbitmq_channel.queue_declare(
+                queue="pricing_failed",
+                durable=True,
+                arguments={
+                    "x-message-ttl": 604800000,  # 7 дней
+                    "x-max-length": 1000,
+                    "x-overflow": "reject-publish"
+                }
+            )
 
-            if received_result:
-                # Конвертируем в PricingResponse
-                pricing_response = PricingResponse(
-                    predicted_price=received_result["predicted_price"],
-                    confidence_score=received_result["confidence_score"],
-                    price_range=received_result["price_range"],
-                    category_analysis=received_result["category_analysis"]
-                )
+            self.rabbitmq_channel.queue_bind(
+                exchange="pricing_dlx",
+                queue="pricing_failed",
+                routing_key="failed"
+            )
 
-                logger.info(
-                    f"Task {task_id} result received from worker "
-                    f"{received_result.get('worker_id', 'unknown')}"
-                )
-                return pricing_response
+        except AMQPChannelError as e:
+            logger.error(f"Failed to setup RabbitMQ topology: {e}")
+            raise TaskQueueError(f"Failed to setup RabbitMQ topology: {str(e)}")
 
-            logger.warning(f"Task {task_id} result not received within {timeout}s")
-            return None
-
-        except Exception as e:
-            logger.error(f"Error getting task result for {task_id}: {e}")
-            return None
-        finally:
-            try:
-                if self.rabbitmq_connection and not self.rabbitmq_connection.is_closed:
-                    self.rabbitmq_connection.close()
-                    self.rabbitmq_connection = None
-                    self.rabbitmq_channel = None
-            except Exception:
-                pass
-
-    async def get_queue_stats(self) -> Dict[str, Any]:
-        """Получение статистики очередей."""
+    def _ensure_connections(self) -> None:
+        """Проверка и восстановление подключений."""
         try:
-            redis_client = await self._get_redis_client()
-            task_queue = self.config.task_queue or "pricing_tasks"
+            # Проверяем Redis
+            if not self.redis_client or not self.redis_client.ping():
+                logger.warning("Redis connection lost, reconnecting...")
+                self._setup_connections()
+                return
 
-            # Получаем длину очереди
-            queue_length = await redis_client.llen(task_queue)
+            # Проверяем RabbitMQ
+            if not self.rabbitmq_connection or self.rabbitmq_connection.is_closed:
+                logger.warning("RabbitMQ connection lost, reconnecting...")
+                self._setup_connections()
+                return
 
-            # Получаем информацию о воркерах (примерно)
-            worker_keys = await redis_client.keys("worker:*:heartbeat")
-            active_workers = len(worker_keys)
-
-            return {
-                "queue_length": queue_length,
-                "active_workers": active_workers,
-                "queue_name": task_queue,
-                "timestamp": time.time()
-            }
+            if not self.rabbitmq_channel or self.rabbitmq_channel.is_closed:
+                logger.warning("RabbitMQ channel closed, reopening...")
+                self.rabbitmq_channel = self.rabbitmq_connection.channel()
+                self._setup_rabbitmq_topology()
 
         except Exception as e:
-            logger.error(f"Error getting queue stats: {e}")
-            return {
-                "queue_length": -1,
-                "active_workers": -1,
-                "error": str(e)
+            logger.error(f"Failed to ensure connections: {e}")
+            raise TaskQueueError(f"Connection check failed: {str(e)}")
+
+    async def add_task(self, task_id: str, product_data: Dict[str, Any]) -> None:
+        """Добавление задачи в очередь."""
+        try:
+            self._ensure_connections()
+
+            task_data = {
+                "task_id": task_id,
+                "product_data": product_data,
+                "created_at": datetime.now().isoformat(),
+                "attempts": 0
             }
 
-    async def cleanup(self):
-        """Очистка ресурсов."""
+            # Добавляем в Redis
+            self.redis_client.rpush(
+                "pricing_tasks",
+                json.dumps(task_data)
+            )
+            logger.info(f"Task {task_id} added to queue")
+
+        except Exception as e:
+            logger.error(f"Failed to add task {task_id}: {e}")
+            raise TaskQueueError(f"Failed to add task: {str(e)}")
+
+    async def get_result(self, task_id: str, timeout: int = 30) -> Optional[Dict[str, Any]]:
+        """Получение результата задачи."""
+        try:
+            self._ensure_connections()
+
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                # Проверяем результат в Redis
+                result = self.redis_client.get(f"result:{task_id}")
+                if result:
+                    self.redis_client.delete(f"result:{task_id}")
+                    return json.loads(result)
+
+                # Проверяем ошибки
+                error = self.redis_client.get(f"error:{task_id}")
+                if error:
+                    self.redis_client.delete(f"error:{task_id}")
+                    raise TaskQueueError(f"Task failed: {error}")
+
+                time.sleep(0.5)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to get result for task {task_id}: {e}")
+            raise TaskQueueError(f"Failed to get task result: {str(e)}")
+
+    async def cleanup(self) -> None:
+        """Очистка старых задач и результатов."""
+        try:
+            self._ensure_connections()
+
+            # Очищаем старые результаты (старше 24 часов)
+            keys = self.redis_client.keys("result:*")
+            for key in keys:
+                if self.redis_client.ttl(key) < 0:
+                    self.redis_client.delete(key)
+
+            # Очищаем старые ошибки (старше 7 дней)
+            keys = self.redis_client.keys("error:*")
+            for key in keys:
+                if self.redis_client.ttl(key) < 0:
+                    self.redis_client.delete(key)
+
+            logger.info("Queue cleanup completed")
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup queues: {e}")
+            raise TaskQueueError(f"Failed to cleanup queues: {str(e)}")
+
+    def __del__(self):
+        """Закрытие соединений при удалении объекта."""
         try:
             if self.redis_client:
-                await self.redis_client.close()
+                self.redis_client.close()
+
+            if self.rabbitmq_channel and not self.rabbitmq_channel.is_closed:
+                self.rabbitmq_channel.close()
 
             if self.rabbitmq_connection and not self.rabbitmq_connection.is_closed:
                 self.rabbitmq_connection.close()
 
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
-
-
-# Singleton instance
-task_queue_service = TaskQueueService()
