@@ -20,9 +20,7 @@ engine = create_async_engine(
 
 # Создаем фабрику сессий
 async_session = sessionmaker(  # type: ignore
-    bind=engine, 
-    class_=AsyncSession,
-    expire_on_commit=False
+    bind=engine, class_=AsyncSession, expire_on_commit=False
 )
 
 

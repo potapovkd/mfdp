@@ -117,6 +117,16 @@ jobs:
         echo "dummy model" > models/catboost_pricing_model.cbm
         echo "dummy pipeline" > models/preprocessing_pipeline.pkl
 
+    - name: Initialize database
+      run: |
+        cd src
+        python -c "
+        import asyncio
+        from base.orm import init_db
+        asyncio.run(init_db())
+        print('Database initialized successfully')
+        "
+
     - name: Run database tests
       run: |
         cd src
