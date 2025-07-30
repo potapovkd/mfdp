@@ -85,7 +85,7 @@ class ProductService:
         """Получение списка товаров пользователя."""
         try:
             async with self._uow as uow:
-                products = await uow.products.get_by_user(user_id)
+                products = await uow.products.get_user_products(user_id)
                 return list(products) if products else []
         except Exception as e:
             raise DatabaseError(f"Ошибка при получении списка товаров: {str(e)}")

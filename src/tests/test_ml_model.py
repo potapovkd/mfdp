@@ -103,12 +103,17 @@ class TestModelTrainer:
             }
         )
 
-        # Мокаем CatBoost
-        with patch("catboost.CatBoostRegressor") as mock_catboost:
+        # Мокаем весь модуль catboost
+        with patch("pricing.model_trainer.CatBoostRegressor") as mock_catboost_class:
             mock_model = Mock()
             mock_model.feature_importances_ = np.array([0.5, 0.3, 0.2])
-            mock_model.predict = Mock(return_value=np.array([10.0, 15.0, 12.0]))
-            mock_catboost.return_value = mock_model
+            # Мокаем predict чтобы возвращал правильное количество предсказаний
+            def mock_predict(X):
+                return np.array([10.0, 15.0, 12.0, 13.0, 14.0][:len(X)])
+            mock_model.predict = Mock(side_effect=mock_predict)
+            mock_model.fit = Mock()
+            mock_model.save_model = Mock()
+            mock_catboost_class.return_value = mock_model
 
             # Подавляем предупреждения о R^2 score
             with warnings.catch_warnings():
@@ -116,9 +121,15 @@ class TestModelTrainer:
                 # Обучаем модель
                 trainer.train_model(df)
 
-            # Проверяем что файлы созданы
-            assert trainer.model_path.exists()
-            assert trainer.metrics_path.exists()
+            # Проверяем что методы были вызваны
+            mock_model.fit.assert_called_once()
+            mock_model.save_model.assert_called_once()
+
+            # Проверяем что метрики были созданы
+            assert hasattr(trainer.metrics, 'metrics')
+            assert 'train' in trainer.metrics.metrics
+            assert 'test' in trainer.metrics.metrics
+            assert hasattr(trainer.metrics, 'feature_importance')
 
     def test_dataset_statistics(self, trainer):
         """Тест сбора статистик датасета."""

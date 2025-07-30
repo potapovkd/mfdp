@@ -84,9 +84,10 @@ async def get_token_from_header(
 
         # Для тестов пропускаем валидацию
         if token == "test_token":
+            expire_timestamp = int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp())
             return JWTPayloadDTO(
                 id=1,
-                exp=datetime.now(timezone.utc) + timedelta(minutes=30),
+                exp=expire_timestamp,
                 type="access",
             )
 
@@ -94,10 +95,12 @@ async def get_token_from_header(
         jwt_handler = JWTHandler(settings.secret_key)
         payload = jwt_handler.decode_token(token)
 
-        # Проверяем не истекла ли сессия
-        if payload.exp and datetime.fromtimestamp(payload.exp) < datetime.now():
-            logger.error(f"Token expired for user: {payload.id}")
-            raise AuthenticationError("Token expired")
+        # JWT библиотека автоматически проверяет expiration, но добавим дополнительную проверку
+        if payload.exp:
+            current_timestamp = int(datetime.now(timezone.utc).timestamp())
+            if payload.exp < current_timestamp:
+                logger.error(f"Token expired for user: {payload.id}")
+                raise AuthenticationError("Token expired")
 
         logger.info(f"Token validated successfully for user ID: {payload.id}")
         return payload

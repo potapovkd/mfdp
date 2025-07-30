@@ -1,7 +1,7 @@
 """Реализации репозиториев для работы с пользователями."""
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -15,7 +15,7 @@ from .repositories import IUserRepository
 
 
 class InMemoryUserRepository(IUserRepository):
-    """In-memory репозиторий пользователей."""
+    """In-memory репозиторий пользователей для тестов."""
 
     def __init__(self) -> None:
         """Инициализация репозитория."""
@@ -32,7 +32,7 @@ class InMemoryUserRepository(IUserRepository):
             id=user_id,
             email=user.email,
             password=user.password,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             balance=Decimal("0.00"),
         )
 

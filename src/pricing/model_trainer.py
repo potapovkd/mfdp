@@ -141,6 +141,8 @@ class PricingModelTrainer:
             random_seed=42,
             verbose=False,
             cat_features=cat_features,
+            # Отключаем создание catboost_info директории в Docker
+            allow_writing_files=False,
         )
 
         self.model.fit(X_train, y_train)

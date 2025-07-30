@@ -1,6 +1,6 @@
 """Утилиты для работы с JWT токенами."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
@@ -24,13 +24,16 @@ class JWTHandler:
     ) -> str:
         """Создание JWT токена."""
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = datetime.now(timezone.utc) + timedelta(
                 minutes=settings.access_token_expires_minutes
             )
 
-        to_encode = {"id": user_id, "exp": expire, "type": "access"}
+        # Конвертируем datetime в timestamp для JWT
+        expire_timestamp = int(expire.timestamp())
+        
+        to_encode = {"id": user_id, "exp": expire_timestamp, "type": "access"}
         try:
             encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm="HS256")
             return str(encoded_jwt)
@@ -47,14 +50,17 @@ class JWTHandler:
         except jwt.InvalidTokenError as e:
             raise InvalidTokenException(f"Invalid token: {str(e)}")
         except Exception as e:
-            raise AuthenticationError(f"Failed to decode token: {str(e)}")
+            raise InvalidTokenException(f"Token decode error: {str(e)}")
 
     def create_refresh_token(self, user_id: int) -> str:
         """Создание refresh токена."""
         expires_delta = timedelta(hours=settings.refresh_token_expires_hours)
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
 
-        to_encode = {"id": user_id, "exp": expire, "type": "refresh"}
+        # Конвертируем datetime в timestamp для JWT
+        expire_timestamp = int(expire.timestamp())
+
+        to_encode = {"id": user_id, "exp": expire_timestamp, "type": "refresh"}
         try:
             encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm="HS256")
             return str(encoded_jwt)
@@ -76,4 +82,4 @@ class JWTHandler:
         except jwt.InvalidTokenError as e:
             raise InvalidTokenException(f"Invalid refresh token: {str(e)}")
         except Exception as e:
-            raise AuthenticationError(f"Failed to verify refresh token: {str(e)}")
+            raise InvalidTokenException(f"Refresh token verify error: {str(e)}")

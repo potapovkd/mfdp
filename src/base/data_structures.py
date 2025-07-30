@@ -10,7 +10,7 @@ class JWTPayloadDTO(BaseModel):
     """DTO для полезной нагрузки JWT токена."""
 
     id: int
-    exp: Optional[datetime] = None
+    exp: Optional[int] = None  # Unix timestamp вместо datetime
     type: Optional[str] = None
 
 

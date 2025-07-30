@@ -38,7 +38,7 @@ router = APIRouter()
 ml_service = MLPricingService()
 
 
-@router.get("/products/", response_model=List[Product])
+@router.get("/", response_model=List[Product])
 async def get_user_products(
     service: ProductServiceDependency,
     token: JWTPayloadDTO = Depends(get_token_from_header),
@@ -53,7 +53,7 @@ async def get_user_products(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/products/", status_code=201, response_model=Product)
+@router.post("/", status_code=201, response_model=Product)
 async def add_product(
     product_data: ProductData,
     service: ProductServiceDependency,
@@ -62,13 +62,11 @@ async def add_product(
     """Добавление нового товара."""
     try:
         return await service.add_product(token.id, product_data)
-    except (AuthenticationError, AuthorizationError) as e:
-        raise HTTPException(status_code=403, detail=str(e))
     except DatabaseError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/products/upload-excel/", status_code=201)
+@router.post("/upload-excel/", status_code=201)
 async def upload_products_excel(
     file: UploadFile,
     data_from_token: Annotated[JWTPayloadDTO, Depends(get_token_from_header)],
@@ -128,7 +126,7 @@ async def upload_products_excel(
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
 
-@router.get("/products/{product_id}", response_model=Product)
+@router.get("/{product_id}", response_model=Product)
 async def get_product(
     product_id: int,
     service: ProductServiceDependency,
@@ -143,7 +141,7 @@ async def get_product(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/products/{product_id}", status_code=204)
+@router.delete("/{product_id}", status_code=204)
 async def delete_product(
     product_id: int,
     service: ProductServiceDependency,
@@ -349,10 +347,15 @@ async def export_pricing_results(
 
         df = pd.DataFrame(export_data)
 
-        # Создаем Excel файл в памяти
+        # Создаем Excel файл в памяти с подавлением warnings
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="Price Predictions", index=False)
+        
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, sheet_name="Price Predictions", index=False)
 
             # Добавляем сводку
             try:

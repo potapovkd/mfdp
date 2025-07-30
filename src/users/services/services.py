@@ -4,6 +4,7 @@ import hashlib
 from decimal import Decimal
 from typing import Optional
 
+from base.exceptions import AuthenticationError
 from users.domain.models import (
     BillingRequest,
     BillingResponse,
@@ -49,6 +50,22 @@ class UserService:
                 if password_hash == user.password:
                     return user
             return None
+
+    async def authenticate_user(self, user_credentials: UserCredentials) -> str:
+        """Аутентификация пользователя и возврат JWT токена."""
+        user = await self.verify_credentials(user_credentials.email, user_credentials.password)
+        if not user:
+            raise AuthenticationError("Неверные учетные данные")
+        
+        # Создаем JWT токен
+        from base.utils import JWTHandler
+        from base.config import get_settings
+        
+        settings = get_settings()
+        jwt_handler = JWTHandler(settings.secret_key)
+        token = jwt_handler.create_access_token(user.id)
+        
+        return token
 
     async def get_user_balance(self, user_id: int) -> Optional[Decimal]:
         """Получение баланса пользователя."""
