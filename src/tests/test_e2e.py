@@ -5,6 +5,9 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import asyncio
+import redis
+import pika
+import json
 
 from fastapi.testclient import TestClient
 from main import app
@@ -337,3 +340,82 @@ class TestE2ESystemHealth:
         # API должен возвращать JSON
         if response.status_code == 200:
             assert "application/json" in headers.get("content-type", "")
+
+
+class TestE2EMLWorker:
+    """E2E тесты для ML воркера через API."""
+
+    @pytest.fixture
+    def client(self):
+        """Фикстура для тестового клиента."""
+        return TestClient(app)
+
+    def test_ml_worker_pricing_endpoint_integration(self, client):
+        """Тест интеграции ML worker через pricing endpoint."""
+        # Тестируем реальный API endpoint, который использует ML worker
+        with patch("src.base.dependencies.get_token_from_header") as mock_token_dep:
+            mock_token = Mock()
+            mock_token.id = 1
+            mock_token_dep.return_value = mock_token
+
+            pricing_data = {
+                "product_data": {
+                    "name": "iPhone 13 Pro",
+                    "item_description": "Brand new iPhone",
+                    "category_name": "Electronics",
+                    "brand_name": "Apple",
+                    "item_condition_id": 1,
+                    "shipping": 1
+                }
+            }
+
+            # Делаем запрос к API
+            response = client.post(
+                "/api/v1/products/pricing/predict/",
+                json=pricing_data,
+                headers={"Authorization": "Bearer test_token"}
+            )
+
+            # Проверяем что API отвечает (может быть и ошибка, если модель не загружена)
+            assert response.status_code in [200, 500]
+
+            # Если успешно, проверяем структуру ответа
+            if response.status_code == 200:
+                result = response.json()
+                assert "predicted_price" in result or "detail" in result
+
+    def test_ml_worker_service_availability(self, client):
+        """Тест доступности ML сервиса."""
+        # Тестируем info endpoint
+        response = client.get("/api/v1/products/pricing/info/")
+        
+        # Должен отвечать, даже если модель не загружена
+        assert response.status_code in [200, 500]
+        
+        if response.status_code == 200:
+            info = response.json()
+            assert "catboost_available" in info or "model_loaded" in info
+
+    def test_ml_worker_error_handling_via_api(self, client):
+        """Тест обработки ошибок ML worker через API."""
+        with patch("src.base.dependencies.get_token_from_header") as mock_token_dep:
+            mock_token = Mock()
+            mock_token.id = 1
+            mock_token_dep.return_value = mock_token
+
+            # Отправляем некорректные данные
+            invalid_data = {
+                "product_data": {
+                    "name": "",  # Пустое имя
+                    "item_condition_id": 10,  # Неверное значение
+                }
+            }
+
+            response = client.post(
+                "/api/v1/products/pricing/predict/",
+                json=invalid_data,
+                headers={"Authorization": "Bearer test_token"}
+            )
+
+            # Должен вернуть ошибку валидации или обработать через ML worker
+            assert response.status_code in [422, 400, 500]

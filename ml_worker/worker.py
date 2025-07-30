@@ -58,7 +58,7 @@ class ScalableMLWorker:
 
         # Настройка логирования
         logger.add(
-            f"logs/worker_{self.worker_id}.log",
+            f"/app/logs/worker_{self.worker_id}.log",  # Исправленный путь
             rotation="100 MB",
             retention="7 days",
             level="INFO"

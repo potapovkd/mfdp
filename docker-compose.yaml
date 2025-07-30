@@ -171,7 +171,7 @@ services:
     volumes:
       - ./models:/app/models:ro
       - ./ml_worker:/app/ml_worker:ro  # Mount worker code for development
-      - ./ml_worker/logs:/app/logs
+      - ./ml_worker/logs:/app/logs  # Исправленный путь для логов
     depends_on:
       redis:
         condition: service_started
