@@ -68,9 +68,9 @@ class TestE2EUserFlow:
         }
 
         # Мокаем все зависимости для полной изоляции
-        with patch("src.users.services.services.UserService") as mock_service, \
-             patch("src.users.entrypoints.api.endpoints.UserServiceDependency") as mock_dependency:
-            
+        with patch("src.users.services.services.UserService") as mock_service, patch(
+            "src.users.entrypoints.api.endpoints.UserServiceDependency"
+        ) as mock_dependency:
             mock_service_instance = Mock()
             mock_service_instance.add_user = AsyncMock()
             mock_service.return_value = mock_service_instance
