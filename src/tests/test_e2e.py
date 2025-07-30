@@ -1,7 +1,7 @@
 """End-to-End тесты для системы ценовой оптимизации."""
 
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient

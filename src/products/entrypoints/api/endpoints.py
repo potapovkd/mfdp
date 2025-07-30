@@ -8,7 +8,6 @@ from typing import Annotated, List
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.background import BackgroundTasks
 from fastapi.responses import FileResponse
 
 from base.data_structures import JWTPayloadDTO
