@@ -33,7 +33,7 @@ class JWTHandler:
         to_encode = {"id": user_id, "exp": expire, "type": "access"}
         try:
             encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm="HS256")
-            return encoded_jwt
+            return str(encoded_jwt)
         except Exception as e:
             raise AuthenticationError(f"Failed to create token: {str(e)}")
 
@@ -57,7 +57,7 @@ class JWTHandler:
         to_encode = {"id": user_id, "exp": expire, "type": "refresh"}
         try:
             encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm="HS256")
-            return encoded_jwt
+            return str(encoded_jwt)
         except Exception as e:
             raise AuthenticationError(f"Failed to create refresh token: {str(e)}")
 
@@ -67,7 +67,10 @@ class JWTHandler:
             payload = jwt.decode(token, self.secret_key, algorithms=["HS256"])
             if payload.get("type") != "refresh":
                 raise InvalidTokenException("Not a refresh token")
-            return payload["id"]
+            user_id = payload.get("id")
+            if user_id is None:
+                raise InvalidTokenException("Token does not contain user ID")
+            return int(user_id)
         except jwt.ExpiredSignatureError:
             raise InvalidTokenException("Refresh token has expired")
         except jwt.InvalidTokenError as e:

@@ -9,6 +9,7 @@ from typing import Annotated, List
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.background import BackgroundTasks
 
 from base.data_structures import JWTPayloadDTO
 
@@ -45,7 +46,8 @@ async def get_user_products(
 ) -> List[Product]:
     """Получение списка товаров пользователя."""
     try:
-        return await service.get_user_products(token.id)
+        products = await service.get_user_products(token.id)
+        return list(products) if products else []
     except (AuthenticationError, AuthorizationError) as e:
         raise HTTPException(status_code=403, detail=str(e))
     except DatabaseError as e:
@@ -404,7 +406,6 @@ async def export_pricing_results(
             tmp_file_path,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             filename=f"price_predictions_{data_from_token.id}.xlsx",
-            background=cleanup_file,
         )
 
     except Exception as e:

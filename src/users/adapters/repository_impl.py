@@ -112,6 +112,6 @@ class PostgreSQLUserRepository(IUserRepository):
                 .where(UserORM.id == user_id)
                 .values(balance=float(new_balance))
             )
-            return result.rowcount > 0
+            return bool(result.rowcount > 0)
         except Exception:
             return False

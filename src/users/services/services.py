@@ -21,7 +21,7 @@ class UserService:
     def __init__(self, uow: IUserUnitOfWork) -> None:
         """Инициализация сервиса."""
         self.uow = uow
-        self.tariff = PricingTariff()
+        self.tariff: PricingTariff = PricingTariff()
 
     async def add_user(self, user: UserCredentials) -> None:
         """Добавление пользователя."""
@@ -54,7 +54,9 @@ class UserService:
         """Получение баланса пользователя."""
         async with self.uow:
             user = await self.uow.users.get_user_by_id(user_id)
-            return user.balance if user else None
+            if user is None:
+                return None
+            return Decimal(str(user.balance))
 
     async def update_user_balance(self, user_id: int, amount: Decimal) -> bool:
         """Обновление баланса пользователя."""
@@ -62,7 +64,7 @@ class UserService:
             success = await self.uow.users.update_balance(user_id, amount)
             if success:
                 await self.uow.commit()
-            return success
+            return bool(success)
 
     async def charge_user(self, billing_request: BillingRequest) -> BillingResponse:
         """Списание средств с баланса пользователя."""
@@ -76,15 +78,16 @@ class UserService:
                     message="Пользователь не найден",
                 )
 
-            if user.balance < billing_request.amount:
+            user_balance = Decimal(str(user.balance))
+            if user_balance < billing_request.amount:
                 return BillingResponse(
                     success=False,
-                    new_balance=user.balance,
+                    new_balance=user_balance,
                     charged_amount=Decimal("0.00"),
-                    message=f"Недостаточно средств. Требуется: ${billing_request.amount}, доступно: ${user.balance}",
+                    message=f"Недостаточно средств. Требуется: ${billing_request.amount}, доступно: ${user_balance}",
                 )
 
-            new_balance = user.balance - billing_request.amount
+            new_balance = user_balance - billing_request.amount
             success = await self.uow.users.update_balance(
                 billing_request.user_id, new_balance
             )
@@ -100,7 +103,7 @@ class UserService:
 
             return BillingResponse(
                 success=False,
-                new_balance=user.balance,
+                new_balance=user_balance,
                 charged_amount=Decimal("0.00"),
                 message="Ошибка при списании средств",
             )
@@ -115,7 +118,7 @@ class UserService:
                 f"Превышен лимит товаров в запросе: {items_count} > {self.tariff.max_items_per_request}"
             )
 
-        base_cost = self.tariff.single_item_price * items_count
+        base_cost = Decimal(str(self.tariff.single_item_price)) * items_count
 
         # Применяем скидку для bulk запросов
         if items_count >= self.tariff.bulk_discount_threshold:

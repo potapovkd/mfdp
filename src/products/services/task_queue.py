@@ -149,7 +149,8 @@ class TaskQueueService:
                 result = self.redis_client.get(f"result:{task_id}")
                 if result:
                     self.redis_client.delete(f"result:{task_id}")
-                    return json.loads(result)
+                    result_data = json.loads(result)
+                    return result_data if isinstance(result_data, dict) else None
 
                 # Проверяем ошибку
                 error = self.redis_client.get(f"error:{task_id}")

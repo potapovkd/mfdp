@@ -23,7 +23,7 @@ class TestModelMetrics:
         assert metrics.metrics["test"]["rmse"] == 0.0
         assert metrics.metrics["test"]["mae"] == 0.0
         assert metrics.metrics["test"]["r2"] == 0.0
-        assert metrics.model_version is None
+        assert metrics.model_version == ""
         assert isinstance(metrics.dataset_stats, dict)
         assert isinstance(metrics.feature_importance, dict)
 

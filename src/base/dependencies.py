@@ -113,7 +113,7 @@ async def get_token_from_header(
         )
 
 
-async def get_db() -> AsyncSession:
+async def get_db():
     """Получение сессии базы данных."""
     session_factory = get_session_factory()
     async with session_factory() as session:

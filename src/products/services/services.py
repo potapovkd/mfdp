@@ -1,6 +1,6 @@
 """Сервисы для работы с товарами и ценообразованием."""
 
-from typing import Optional
+from typing import Optional, Any
 
 from base.exceptions import DatabaseError, PermissionDeniedError, ProductNotFoundError
 from pricing.pricing_service import PricingService
@@ -85,7 +85,8 @@ class ProductService:
         """Получение списка товаров пользователя."""
         try:
             async with self._uow as uow:
-                return await uow.products.get_by_user(user_id)
+                products = await uow.products.get_by_user(user_id)
+                return list(products) if products else []
         except Exception as e:
             raise DatabaseError(f"Ошибка при получении списка товаров: {str(e)}")
 
@@ -273,9 +274,10 @@ class MLPricingService:
             },
         )
 
-    def get_service_info(self) -> dict:
+    def get_service_info(self) -> dict[str, Any]:
         """Получение информации о сервисе ML."""
-        return self.pricing_service.get_model_info()
+        info = self.pricing_service.get_model_info()
+        return dict(info) if info else {}
 
 
 # All deprecated service classes removed after migration

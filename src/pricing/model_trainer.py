@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -16,27 +16,25 @@ logger = logging.getLogger(__name__)
 
 
 class ModelMetrics:
-    """Класс для хранения и отслеживания метрик модели."""
+    """Класс для хранения метрик модели."""
 
     def __init__(self):
         """Инициализация метрик."""
+        self.model_version = ""
+        self.dataset_stats = {}
+        self.feature_importance = {}
         self.metrics = {
             "train": {"rmse": 0.0, "mae": 0.0, "r2": 0.0},
             "test": {"rmse": 0.0, "mae": 0.0, "r2": 0.0},
         }
-        self.timestamp = datetime.now().isoformat()
-        self.model_version = None
-        self.dataset_stats = {}
-        self.feature_importance = {}
 
     def to_dict(self) -> Dict[str, Any]:
-        """Преобразование метрик в словарь."""
+        """Конвертация в словарь."""
         return {
-            "metrics": self.metrics,
-            "timestamp": self.timestamp,
             "model_version": self.model_version,
             "dataset_stats": self.dataset_stats,
             "feature_importance": self.feature_importance,
+            "metrics": self.metrics,
         }
 
     def save(self, path: Path) -> None:
@@ -64,7 +62,7 @@ class PricingModelTrainer:
         self.model_path = self.version_dir / f"{model_name}.cbm"
         self.metrics_path = self.version_dir / "metrics.json"
 
-        self.model = None
+        self.model: Optional[CatBoostRegressor] = None
         self.metrics = ModelMetrics()
         self.metrics.model_version = self.version
 
@@ -176,5 +174,7 @@ class PricingModelTrainer:
 
     def save_model(self) -> None:
         """Сохранение модели и метрик."""
+        if self.model is None:
+            raise RuntimeError("Модель не была создана")
         self.model.save_model(self.model_path)
         self.metrics.save(self.metrics_path)
