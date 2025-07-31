@@ -1,8 +1,7 @@
 """Unit тесты для всех компонентов проекта."""
 
-import os
-from decimal import Decimal
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
 
 import jwt
@@ -26,13 +25,13 @@ from base.exceptions import (
     ValidationError,
 )
 from base.utils import JWTHandler
-from users.domain.models import BillingRequest, BillingResponse, PricingTariff, User, UserCredentials
+from users.domain.models import BillingRequest, PricingTariff, UserCredentials
 from users.services.services import UserService
-
 
 # =============================================================================
 # EXCEPTION HANDLERS TESTS
 # =============================================================================
+
 
 class TestExceptionHandlers:
     """Unit тесты для обработчиков исключений."""
@@ -176,6 +175,7 @@ class TestExceptionHandlers:
 # JWT UTILS TESTS
 # =============================================================================
 
+
 class TestJWTHandler:
     """Unit тесты для JWTHandler."""
 
@@ -199,10 +199,10 @@ class TestJWTHandler:
         """Тест создания access токена с дефолтным временем истечения."""
         with patch("base.utils.settings.access_token_expires_minutes", 30):
             token = jwt_handler.create_access_token(user_id)
-            
+
             assert isinstance(token, str)
             assert len(token) > 0
-            
+
             # Декодируем токен для проверки содержимого
             payload = jwt.decode(token, jwt_handler.secret_key, algorithms=["HS256"])
             assert payload["id"] == user_id
@@ -213,7 +213,7 @@ class TestJWTHandler:
         """Тест создания access токена с пользовательским временем истечения."""
         custom_delta = timedelta(minutes=60)
         token = jwt_handler.create_access_token(user_id, custom_delta)
-        
+
         payload = jwt.decode(token, jwt_handler.secret_key, algorithms=["HS256"])
         assert payload["id"] == user_id
         assert payload["type"] == "access"
@@ -231,7 +231,7 @@ class TestJWTHandler:
         """Тест декодирования валидного токена."""
         token = jwt_handler.create_access_token(user_id)
         decoded = jwt_handler.decode_token(token)
-        
+
         assert isinstance(decoded, JWTPayloadDTO)
         assert decoded.id == user_id
         assert decoded.type == "access"
@@ -241,10 +241,10 @@ class TestJWTHandler:
         # Создаем токен с истекшим временем
         past_time = datetime.now(timezone.utc) - timedelta(hours=1)
         expire_timestamp = int(past_time.timestamp())
-        
+
         payload = {"id": user_id, "exp": expire_timestamp, "type": "access"}
         expired_token = jwt.encode(payload, jwt_handler.secret_key, algorithm="HS256")
-        
+
         with pytest.raises(InvalidTokenException) as excinfo:
             jwt_handler.decode_token(expired_token)
         assert "Token has expired" in str(excinfo.value)
@@ -252,7 +252,7 @@ class TestJWTHandler:
     def test_decode_token_invalid(self, jwt_handler):
         """Тест декодирования невалидного токена."""
         invalid_token = "invalid.token.here"
-        
+
         with pytest.raises(InvalidTokenException) as excinfo:
             jwt_handler.decode_token(invalid_token)
         assert "Invalid token" in str(excinfo.value)
@@ -261,9 +261,9 @@ class TestJWTHandler:
         """Тест декодирования токена с неправильным секретом."""
         handler1 = JWTHandler("secret1")
         handler2 = JWTHandler("secret2")
-        
+
         token = handler1.create_access_token(user_id)
-        
+
         with pytest.raises(InvalidTokenException) as excinfo:
             handler2.decode_token(token)
         assert "Invalid token" in str(excinfo.value)
@@ -272,10 +272,10 @@ class TestJWTHandler:
         """Тест создания refresh токена."""
         with patch("base.utils.settings.refresh_token_expires_hours", 24):
             token = jwt_handler.create_refresh_token(user_id)
-            
+
             assert isinstance(token, str)
             assert len(token) > 0
-            
+
             # Декодируем токен для проверки содержимого
             payload = jwt.decode(token, jwt_handler.secret_key, algorithms=["HS256"])
             assert payload["id"] == user_id
@@ -295,13 +295,13 @@ class TestJWTHandler:
         """Тест верификации валидного refresh токена."""
         refresh_token = jwt_handler.create_refresh_token(user_id)
         verified_user_id = jwt_handler.verify_refresh_token(refresh_token)
-        
+
         assert verified_user_id == user_id
 
     def test_verify_refresh_token_not_refresh_type(self, jwt_handler, user_id):
         """Тест верификации access токена как refresh (должно упасть)."""
         access_token = jwt_handler.create_access_token(user_id)
-        
+
         with pytest.raises(InvalidTokenException) as excinfo:
             jwt_handler.verify_refresh_token(access_token)
         assert "Not a refresh token" in str(excinfo.value)
@@ -309,9 +309,12 @@ class TestJWTHandler:
     def test_verify_refresh_token_no_user_id(self, jwt_handler):
         """Тест верификации refresh токена без user ID."""
         # Создаем токен без ID
-        payload = {"exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()), "type": "refresh"}
+        payload = {
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+            "type": "refresh",
+        }
         token = jwt.encode(payload, jwt_handler.secret_key, algorithm="HS256")
-        
+
         with pytest.raises(InvalidTokenException) as excinfo:
             jwt_handler.verify_refresh_token(token)
         assert "Token does not contain user ID" in str(excinfo.value)
@@ -321,10 +324,10 @@ class TestJWTHandler:
         # Создаем токен с истекшим временем
         past_time = datetime.now(timezone.utc) - timedelta(hours=1)
         expire_timestamp = int(past_time.timestamp())
-        
+
         payload = {"id": user_id, "exp": expire_timestamp, "type": "refresh"}
         expired_token = jwt.encode(payload, jwt_handler.secret_key, algorithm="HS256")
-        
+
         with pytest.raises(InvalidTokenException) as excinfo:
             jwt_handler.verify_refresh_token(expired_token)
         assert "Refresh token has expired" in str(excinfo.value)
@@ -332,7 +335,7 @@ class TestJWTHandler:
     def test_verify_refresh_token_invalid(self, jwt_handler):
         """Тест верификации невалидного refresh токена."""
         invalid_token = "invalid.refresh.token"
-        
+
         with pytest.raises(InvalidTokenException) as excinfo:
             jwt_handler.verify_refresh_token(invalid_token)
         assert "Invalid refresh token" in str(excinfo.value)
@@ -356,6 +359,7 @@ class TestJWTHandler:
 # USER SERVICES TESTS
 # =============================================================================
 
+
 class TestUserService:
     """Unit тесты для UserService."""
 
@@ -372,18 +376,13 @@ class TestUserService:
     @pytest.fixture
     def user_credentials(self):
         """Учетные данные пользователя."""
-        return UserCredentials(
-            email="test@example.com",
-            password="password123"
-        )
+        return UserCredentials(email="test@example.com", password="password123")
 
     @pytest.fixture
     def billing_request(self):
         """Запрос на списание средств."""
         return BillingRequest(
-            user_id=1,
-            amount=Decimal("50.00"),
-            description="Test charge"
+            user_id=1, amount=Decimal("50.00"), description="Test charge"
         )
 
     @pytest.fixture
@@ -393,7 +392,9 @@ class TestUserService:
         user.id = 1
         user.email = "test@example.com"
         # Хеш пароля "hello" - 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
-        user.password = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        user.password = (
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
         user.balance = Decimal("100.00")
         return user
 
@@ -402,9 +403,9 @@ class TestUserService:
         """Тест успешного добавления пользователя."""
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
-        
+
         await user_service.add_user(user_credentials)
-        
+
         mock_uow.users.add_user.assert_called_once_with(user_credentials)
         mock_uow.commit.assert_called_once()
 
@@ -414,9 +415,9 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_email.return_value = mock_user
-        
+
         result = await user_service.get_user_by_email("test@example.com")
-        
+
         assert result == mock_user
         mock_uow.users.get_user_by_email.assert_called_once_with("test@example.com")
 
@@ -426,9 +427,9 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_email.return_value = None
-        
+
         result = await user_service.get_user_by_email("notfound@example.com")
-        
+
         assert result is None
 
     @pytest.mark.asyncio
@@ -437,9 +438,9 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_id.return_value = mock_user
-        
+
         result = await user_service.get_user_by_id(1)
-        
+
         assert result == mock_user
         mock_uow.users.get_user_by_id.assert_called_once_with(1)
 
@@ -447,26 +448,27 @@ class TestUserService:
     async def test_verify_credentials_success(self, user_service, mock_uow):
         """Тест успешной проверки учетных данных."""
         # Создаем реальный объект User вместо Mock
-        from users.domain.models import User
         from datetime import datetime, timezone
-        
-        user = User(
+
+        from users.domain.models import User as UserModel
+
+        user = UserModel(
             id=1,
             email="test@example.com",
             password="2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",  # sha256("hello")
             created_at=datetime.now(timezone.utc),
-            balance=Decimal("100.00")
+            balance=Decimal("100.00"),
         )
-        
+
         # Настраиваем mock_uow.users
         mock_uow.users = AsyncMock()
         mock_uow.users.get_user_by_email.return_value = user
-        
+
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
-        
+
         result = await user_service.verify_credentials("test@example.com", "hello")
-        
+
         assert result == user
         mock_uow.users.get_user_by_email.assert_called_once_with("test@example.com")
 
@@ -474,54 +476,59 @@ class TestUserService:
     async def test_verify_credentials_wrong_password(self, user_service, mock_uow):
         """Тест проверки с неправильным паролем."""
         # Создаем реальный объект User
-        from users.domain.models import User
         from datetime import datetime, timezone
-        
-        user = User(
+
+        from users.domain.models import User as UserModel
+
+        user = UserModel(
             id=1,
             email="test@example.com",
             password="2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",  # sha256("hello")
             created_at=datetime.now(timezone.utc),
-            balance=Decimal("100.00")
+            balance=Decimal("100.00"),
         )
-        
+
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_email.return_value = user
-        
-        result = await user_service.verify_credentials("test@example.com", "wrongpassword")
-        
+
+        result = await user_service.verify_credentials(
+            "test@example.com", "wrongpassword"
+        )
+
         assert result is None
 
     @pytest.mark.asyncio
     async def test_authenticate_user_success(self, user_service, user_credentials):
         """Тест успешной аутентификации пользователя."""
-        with patch.object(user_service, 'verify_credentials') as mock_verify:
+        with patch.object(user_service, "verify_credentials") as mock_verify:
             mock_user = Mock()
             mock_user.id = 1
             mock_verify.return_value = mock_user
-            
+
             with patch("base.utils.JWTHandler") as mock_jwt_class:
                 mock_jwt_handler = Mock()
                 mock_jwt_handler.create_access_token.return_value = "access_token"
                 mock_jwt_class.return_value = mock_jwt_handler
-                
+
                 with patch("base.config.get_settings") as mock_settings:
                     mock_settings.return_value.secret_key = "test_secret"
-                    
+
                     result = await user_service.authenticate_user(user_credentials)
-                    
+
                     assert result == "access_token"
 
     @pytest.mark.asyncio
-    async def test_authenticate_user_invalid_credentials(self, user_service, user_credentials):
+    async def test_authenticate_user_invalid_credentials(
+        self, user_service, user_credentials
+    ):
         """Тест аутентификации с неверными учетными данными."""
-        with patch.object(user_service, 'verify_credentials') as mock_verify:
+        with patch.object(user_service, "verify_credentials") as mock_verify:
             mock_verify.return_value = None
-            
+
             with pytest.raises(AuthenticationError) as excinfo:
                 await user_service.authenticate_user(user_credentials)
-            
+
             assert "Неверные учетные данные" in str(excinfo.value)
 
     @pytest.mark.asyncio
@@ -530,9 +537,9 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_id.return_value = mock_user
-        
+
         result = await user_service.get_user_balance(1)
-        
+
         assert result == Decimal("100.00")
         mock_uow.users.get_user_by_id.assert_called_once_with(1)
 
@@ -542,9 +549,9 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_id.return_value = None
-        
+
         result = await user_service.get_user_balance(999)
-        
+
         assert result is None
 
     @pytest.mark.asyncio
@@ -553,9 +560,9 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.update_balance.return_value = True
-        
+
         result = await user_service.update_user_balance(1, Decimal("150.00"))
-        
+
         assert result is True
         mock_uow.users.update_balance.assert_called_once_with(1, Decimal("150.00"))
         mock_uow.commit.assert_called_once()
@@ -566,22 +573,24 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.update_balance.return_value = False
-        
+
         result = await user_service.update_user_balance(1, Decimal("150.00"))
-        
+
         assert result is False
         mock_uow.commit.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_charge_user_success(self, user_service, mock_uow, mock_user, billing_request):
+    async def test_charge_user_success(
+        self, user_service, mock_uow, mock_user, billing_request
+    ):
         """Тест успешного списания средств с пользователя."""
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_id.return_value = mock_user
         mock_uow.users.update_balance.return_value = True
-        
+
         result = await user_service.charge_user(billing_request)
-        
+
         assert result.success is True
         assert result.new_balance == Decimal("50.00")  # 100 - 50
         assert result.charged_amount == Decimal("50.00")
@@ -593,55 +602,57 @@ class TestUserService:
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_id.return_value = None
-        
+
         result = await user_service.charge_user(billing_request)
-        
+
         assert result.success is False
         assert result.message == "Пользователь не найден"
 
     @pytest.mark.asyncio
-    async def test_charge_user_insufficient_funds(self, user_service, mock_uow, mock_user):
+    async def test_charge_user_insufficient_funds(
+        self, user_service, mock_uow, mock_user
+    ):
         """Тест списания при недостатке средств."""
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_id.return_value = mock_user
-        
+
         # Запрос на сумму больше баланса
         billing_request = BillingRequest(
-            user_id=1,
-            amount=Decimal("150.00"),
-            description="Large charge"
+            user_id=1, amount=Decimal("150.00"), description="Large charge"
         )
-        
+
         result = await user_service.charge_user(billing_request)
-        
+
         assert result.success is False
         assert "Недостаточно средств" in result.message
 
     @pytest.mark.asyncio
-    async def test_charge_user_update_failed(self, user_service, mock_uow, mock_user, billing_request):
+    async def test_charge_user_update_failed(
+        self, user_service, mock_uow, mock_user, billing_request
+    ):
         """Тест ошибки при обновлении баланса."""
         mock_uow.__aenter__.return_value = mock_uow
         mock_uow.__aexit__.return_value = None
         mock_uow.users.get_user_by_id.return_value = mock_user
         mock_uow.users.update_balance.return_value = False
-        
+
         result = await user_service.charge_user(billing_request)
-        
+
         assert result.success is False
         assert result.message == "Ошибка при списании средств"
 
     def test_calculate_pricing_cost_single_item(self, user_service):
         """Тест расчета стоимости для одного товара."""
         result = user_service.calculate_pricing_cost(1)
-        
+
         expected = Decimal("5.00")  # PricingTariff.single_item_price по умолчанию
         assert result == expected
 
     def test_calculate_pricing_cost_multiple_items(self, user_service):
         """Тест расчета стоимости для нескольких товаров."""
         result = user_service.calculate_pricing_cost(5)
-        
+
         expected = Decimal("25.00")  # 5 * 5.00
         assert result == expected
 
@@ -650,9 +661,9 @@ class TestUserService:
         # Устанавливаем параметры тарифа для тестирования скидки
         user_service.tariff.bulk_discount_threshold = 10
         user_service.tariff.bulk_discount_percent = 10.0
-        
+
         result = user_service.calculate_pricing_cost(10)
-        
+
         base_cost = Decimal("50.00")  # 10 * 5.00
         discount = base_cost * Decimal("0.10")  # 10% скидка
         expected = base_cost - discount
@@ -661,20 +672,20 @@ class TestUserService:
     def test_calculate_pricing_cost_zero_items(self, user_service):
         """Тест расчета стоимости для нуля товаров."""
         result = user_service.calculate_pricing_cost(0)
-        
+
         assert result == Decimal("0.00")
 
     def test_calculate_pricing_cost_exceeds_limit(self, user_service):
         """Тест превышения лимита товаров."""
         with pytest.raises(ValueError) as excinfo:
             user_service.calculate_pricing_cost(1001)  # По умолчанию лимит 1000
-        
+
         assert "Превышен лимит товаров в запросе" in str(excinfo.value)
 
     def test_get_tariff_info(self, user_service):
         """Тест получения информации о тарифах."""
         result = user_service.get_tariff_info()
-        
+
         assert isinstance(result, PricingTariff)
         assert result == user_service.tariff
 
@@ -683,13 +694,14 @@ class TestUserService:
 # ML MODEL TESTS
 # =============================================================================
 
+
 class TestModelMetrics:
     """Unit тесты для класса ModelMetrics."""
 
     def test_initialization(self):
         """Тест инициализации метрик."""
         from pricing.model_trainer import ModelMetrics
-        
+
         metrics = ModelMetrics()
         assert metrics.metrics["train"]["rmse"] == 0.0
         assert metrics.metrics["train"]["mae"] == 0.0
@@ -704,7 +716,7 @@ class TestModelMetrics:
     def test_to_dict(self):
         """Тест преобразования метрик в словарь."""
         from pricing.model_trainer import ModelMetrics
-        
+
         metrics = ModelMetrics()
         metrics.metrics["train"]["rmse"] = 1.0
         metrics.metrics["test"]["rmse"] = 1.5
@@ -718,8 +730,9 @@ class TestModelMetrics:
     def test_save_to_file(self, tmp_path):
         """Тест сохранения метрик в файл."""
         import json
+
         from pricing.model_trainer import ModelMetrics
-        
+
         metrics = ModelMetrics()
         metrics.metrics["train"]["rmse"] = 1.0
         metrics.metrics["test"]["rmse"] = 1.5
@@ -742,7 +755,7 @@ class TestModelTrainer:
     def trainer(self, tmp_path):
         """Фикстура для создания тренера модели."""
         from pricing.model_trainer import PricingModelTrainer
-        
+
         return PricingModelTrainer(
             model_dir=str(tmp_path), model_name="test_model", version="test_version"
         )
@@ -750,7 +763,7 @@ class TestModelTrainer:
     def test_model_versioning(self, tmp_path):
         """Тест системы версионирования моделей."""
         from pricing.model_trainer import PricingModelTrainer
-        
+
         version1 = "20240101_120000"
         version2 = "20240101_130000"
         trainer1 = PricingModelTrainer(
@@ -767,10 +780,11 @@ class TestModelTrainer:
 
     def test_model_training_and_saving(self, trainer):
         """Тест обучения и сохранения модели."""
-        import pandas as pd
-        import numpy as np
         import warnings
-        
+
+        import numpy as np
+        import pandas as pd
+
         # Создаем тестовый датасет с достаточным количеством данных
         df = pd.DataFrame(
             {
@@ -823,7 +837,7 @@ class TestModelTrainer:
     def test_dataset_statistics(self, trainer):
         """Тест сбора статистик датасета."""
         import pandas as pd
-        
+
         # Создаем тестовый датасет
         df = pd.DataFrame(
             {
@@ -861,8 +875,9 @@ class TestModelTrainer:
 
 
 # =============================================================================
-# DATABASE TESTS  
+# DATABASE TESTS
 # =============================================================================
+
 
 class TestDatabaseModels:
     """Unit тесты для ORM моделей базы данных."""
@@ -870,9 +885,11 @@ class TestDatabaseModels:
     def test_create_user(self, session):
         """Тест создания пользователя."""
         from users.adapters.orm import UserORM
-        
+
         user = UserORM(
-            email="test@example.com", username="testuser", password_hash="hashed_password"
+            email="test@example.com",
+            username="testuser",
+            password_hash="hashed_password",
         )
         session.add(user)
         session.commit()
@@ -886,7 +903,7 @@ class TestDatabaseModels:
     def test_create_product(self, session, user):
         """Тест создания продукта."""
         from products.adapters.orm import ProductORM
-        
+
         product = ProductORM(
             user_id=user.id,
             name="Test Product",
@@ -905,7 +922,7 @@ class TestDatabaseModels:
     def test_create_task(self, session, user):
         """Тест создания задачи ценообразования."""
         from products.adapters.orm import ProductORM, TaskORM
-        
+
         # Сначала создаем продукт
         product = ProductORM(
             user_id=user.id, name="Test Product", category_name="Electronics"
@@ -930,8 +947,8 @@ class TestDatabaseModels:
     def test_fail_create_task_without_product(self, session):
         """Тест создания задачи без продукта."""
         from products.adapters.orm import TaskORM
-        
+
         task = TaskORM(product_id=999, type="pricing")
         with pytest.raises(Exception):
             session.add(task)
-            session.commit() 
+            session.commit()

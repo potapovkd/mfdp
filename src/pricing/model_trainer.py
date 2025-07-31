@@ -50,7 +50,7 @@ class PricingModelTrainer:
         self,
         model_dir: str,
         model_name: str = "catboost_pricing_model",
-        version: str = None,
+        version: Optional[str] = None,
     ):
         """Инициализация тренера."""
         self.model_dir = Path(model_dir)

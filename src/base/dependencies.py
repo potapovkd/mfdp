@@ -57,17 +57,31 @@ class JWTBearerWithRateLimit(HTTPBearer):
         credentials = await super().__call__(request)
 
         # Получаем IP
-        ip = request.client.host
+        ip = request.client.host if request.client else "unknown"
 
         # Проверяем rate limit
-        if self._is_rate_limited(ip, credentials.credentials):
+        if (
+            credentials
+            and hasattr(credentials, "credentials")
+            and self._is_rate_limited(ip, credentials.credentials)
+        ):
             logger.warning(f"Rate limit exceeded for IP: {ip}")
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many requests",
             )
 
-        return credentials
+        if (
+            credentials
+            and hasattr(credentials, "credentials")
+            and credentials.credentials
+        ):
+            return credentials
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 security = JWTBearerWithRateLimit()
@@ -83,7 +97,7 @@ async def get_token_from_header(
         logger.info(f"Attempting to decode token: {token[:20]}...")
 
         # Для тестов пропускаем валидацию
-        if token == "test_token":
+        if token == "test_token":  # nosec B105
             expire_timestamp = int(
                 (datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp()
             )

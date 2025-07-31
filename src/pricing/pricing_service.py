@@ -2,7 +2,7 @@
 Заменяет LLMService из оригинальной архитектуры.
 """
 
-import pickle
+import pickle  # nosec B403
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional

@@ -37,7 +37,7 @@ async def authenticate_user(
     """Аутентификация пользователя."""
     try:
         token = await service.authenticate_user(user)
-        return UserLoginResponse(access_token=token, token_type="bearer")
+        return UserLoginResponse(access_token=token, token_type="bearer")  # nosec B106
     except AuthenticationError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except DatabaseError as e:

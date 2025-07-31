@@ -69,32 +69,33 @@ class TaskQueueService:
     def _setup_rabbitmq_topology(self) -> None:
         """Настройка топологии RabbitMQ."""
         # Основная очередь для результатов
-        self.rabbitmq_channel.exchange_declare(
-            exchange="pricing_results", exchange_type="direct", durable=True
-        )
-        self.rabbitmq_channel.queue_declare(
-            queue="pricing_results",
-            durable=True,
-            arguments={
-                "x-message-ttl": 86400000,  # 24 часа
-                "x-max-length": 10000,
-                "x-overflow": "reject-publish",
-            },
-        )
+        if self.rabbitmq_channel:
+            self.rabbitmq_channel.exchange_declare(
+                exchange="pricing_results", exchange_type="direct", durable=True
+            )
+            self.rabbitmq_channel.queue_declare(
+                queue="pricing_results",
+                durable=True,
+                arguments={
+                    "x-message-ttl": 86400000,  # 24 часа
+                    "x-max-length": 10000,
+                    "x-overflow": "reject-publish",
+                },
+            )
 
-        # Dead Letter Exchange и очередь
-        self.rabbitmq_channel.exchange_declare(
-            exchange="pricing_dlx", exchange_type="direct", durable=True
-        )
-        self.rabbitmq_channel.queue_declare(
-            queue="pricing_failed",
-            durable=True,
-            arguments={
-                "x-message-ttl": 604800000,  # 7 дней
-                "x-max-length": 1000,
-                "x-overflow": "reject-publish",
-            },
-        )
+            # Dead Letter Exchange и очередь
+            self.rabbitmq_channel.exchange_declare(
+                exchange="pricing_dlx", exchange_type="direct", durable=True
+            )
+            self.rabbitmq_channel.queue_declare(
+                queue="pricing_failed",
+                durable=True,
+                arguments={
+                    "x-message-ttl": 604800000,  # 7 дней
+                    "x-max-length": 1000,
+                    "x-overflow": "reject-publish",
+                },
+            )
 
     def _ensure_connections(self) -> None:
         """Проверка и восстановление подключений."""
@@ -130,7 +131,8 @@ class TaskQueueService:
                 "created_at": datetime.now().isoformat(),
                 "attempts": 0,
             }
-            self.redis_client.rpush("pricing_tasks", json.dumps(task_data))
+            if self.redis_client:
+                self.redis_client.rpush("pricing_tasks", json.dumps(task_data))
             logger.info(f"Task {task_id} added to queue")
         except Exception as e:
             logger.error(f"Failed to add task {task_id}: {e}")
@@ -146,17 +148,18 @@ class TaskQueueService:
 
             while time.time() - start_time < timeout:
                 # Проверяем результат
-                result = self.redis_client.get(f"result:{task_id}")
-                if result:
-                    self.redis_client.delete(f"result:{task_id}")
-                    result_data = json.loads(result)
-                    return result_data if isinstance(result_data, dict) else None
+                if self.redis_client:
+                    result = self.redis_client.get(f"result:{task_id}")
+                    if result:
+                        self.redis_client.delete(f"result:{task_id}")
+                        result_data = json.loads(result)
+                        return result_data if isinstance(result_data, dict) else None
 
-                # Проверяем ошибку
-                error = self.redis_client.get(f"error:{task_id}")
-                if error:
-                    self.redis_client.delete(f"error:{task_id}")
-                    raise TaskQueueError(error.decode())
+                    # Проверяем ошибку
+                    error = self.redis_client.get(f"error:{task_id}")
+                    if error:
+                        self.redis_client.delete(f"error:{task_id}")
+                        raise TaskQueueError(error.decode())
 
                 time.sleep(0.5)
 
@@ -174,13 +177,14 @@ class TaskQueueService:
             self._ensure_connections()
 
             # Получаем все ключи результатов и ошибок
-            result_keys = self.redis_client.keys("result:*")
-            error_keys = self.redis_client.keys("error:*")
+            if self.redis_client:
+                result_keys = self.redis_client.keys("result:*")
+                error_keys = self.redis_client.keys("error:*")
 
-            # Удаляем старые ключи (TTL < 0)
-            for key in result_keys + error_keys:
-                if self.redis_client.ttl(key) < 0:
-                    self.redis_client.delete(key)
+                # Удаляем старые ключи (TTL < 0)
+                for key in result_keys + error_keys:
+                    if self.redis_client.ttl(key) < 0:
+                        self.redis_client.delete(key)
 
             logger.info("Queue cleanup completed")
 
@@ -190,9 +194,9 @@ class TaskQueueService:
     def __del__(self):
         """Закрытие соединений при удалении объекта."""
         try:
-            if hasattr(self, "rabbitmq_channel"):
+            if hasattr(self, "rabbitmq_channel") and self.rabbitmq_channel:
                 self.rabbitmq_channel.close()
-            if hasattr(self, "rabbitmq_connection"):
+            if hasattr(self, "rabbitmq_connection") and self.rabbitmq_connection:
                 self.rabbitmq_connection.close()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")

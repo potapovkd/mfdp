@@ -1,7 +1,7 @@
 """Быстрое обучение модели для демонстрации.
 """
 
-import pickle
+import pickle  # nosec B403
 import re
 import warnings
 from pathlib import Path

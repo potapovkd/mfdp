@@ -283,6 +283,7 @@ class TestErrorHandling:
 # TASK QUEUE INTEGRATION TESTS
 # =============================================================================
 
+
 @pytest.fixture
 def service():
     """Фикстура для создания сервиса очереди задач."""

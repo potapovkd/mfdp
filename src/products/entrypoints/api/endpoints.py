@@ -73,7 +73,7 @@ async def upload_products_excel(
     service: ProductServiceDependency,
 ):
     """Загрузка товаров из Excel файла."""
-    if not file.filename.endswith((".xlsx", ".xls")):
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(
             status_code=400, detail="File must be Excel format (.xlsx or .xls)"
         )
