@@ -32,37 +32,54 @@ jobs:
         pip install -r requirements.dev.txt
 
     - name: Run Black (code formatting check)
+      id: black
       continue-on-error: true
       run: |
         black --check --diff src/
+        echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Run isort (import sorting check)
+      id: isort
       continue-on-error: true
+      if: always()
       run: |
         isort --check-only --diff src/
+        echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Run flake8 (linting)
+      id: flake8
       continue-on-error: true
+      if: always()
       run: |
         flake8 src/ --max-line-length=88 --extend-ignore=E203,W503
+        echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Run mypy (type checking)
+      id: mypy
       continue-on-error: true
+      if: always()
       run: |
         mypy src/ --ignore-missing-imports --no-strict-optional
+        echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Run bandit (security check)
+      id: bandit
       continue-on-error: true
+      if: always()
       run: |
         bandit -r src/ -f json -o bandit-report.json || true
         bandit -r src/
+        echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Check for security vulnerabilities
+      id: safety
       continue-on-error: true
+      if: always()
       run: |
         pip install safety
         safety check --json --output safety-report.json || true
         safety check
+        echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Upload security reports
       if: always()
@@ -71,4 +88,72 @@ jobs:
         name: security-reports
         path: |
           bandit-report.json
-          safety-report.json 
+          safety-report.json
+
+    - name: Collect results and create summary
+      if: always()
+      run: |
+        echo "## 🔍 Code Quality Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        failed_checks=""
+        
+        if [ "${{ steps.black.outputs.status }}" != "0" ]; then
+          echo "❌ **Black**: Code formatting issues found" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Black Formatting::Code formatting issues detected. Run 'black src/' to fix."
+          failed_checks="$failed_checks black"
+        else
+          echo "✅ **Black**: Code formatting is correct" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.isort.outputs.status }}" != "0" ]; then
+          echo "❌ **isort**: Import sorting issues found" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Import Sorting::Import sorting issues detected. Run 'isort src/' to fix."
+          failed_checks="$failed_checks isort"
+        else
+          echo "✅ **isort**: Import sorting is correct" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.flake8.outputs.status }}" != "0" ]; then
+          echo "❌ **flake8**: Linting issues found" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Linting::Linting issues detected. Check flake8 output above."
+          failed_checks="$failed_checks flake8"
+        else
+          echo "✅ **flake8**: No linting issues" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.mypy.outputs.status }}" != "0" ]; then
+          echo "❌ **mypy**: Type checking issues found" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Type Checking::Type checking issues detected. Check mypy output above."
+          failed_checks="$failed_checks mypy"
+        else
+          echo "✅ **mypy**: Type checking passed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.bandit.outputs.status }}" != "0" ]; then
+          echo "❌ **bandit**: Security issues found" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Security::Security issues detected. Check bandit output above."
+          failed_checks="$failed_checks bandit"
+        else
+          echo "✅ **bandit**: No security issues" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.safety.outputs.status }}" != "0" ]; then
+          echo "❌ **safety**: Vulnerability issues found" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Vulnerabilities::Dependency vulnerabilities detected. Check safety output above."
+          failed_checks="$failed_checks safety"
+        else
+          echo "✅ **safety**: No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -n "$failed_checks" ]; then
+          echo "::warning title=Code Quality::Some code quality checks failed:$failed_checks"
+          echo "⚠️ **Code quality issues detected in:** $failed_checks" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please review the issues above and fix them before merging." >> $GITHUB_STEP_SUMMARY
+          echo "Workflow completed with warnings - please address code quality issues."
+        else
+          echo "🎉 **All code quality checks passed!**" >> $GITHUB_STEP_SUMMARY
+        fi 
