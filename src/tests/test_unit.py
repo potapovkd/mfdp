@@ -28,6 +28,10 @@ from base.utils import JWTHandler
 from users.domain.models import BillingRequest, PricingTariff, UserCredentials
 from users.services.services import UserService
 
+# Импортируем ORM модели для тестов
+from users.adapters.orm import UserORM
+from products.adapters.orm import ProductORM, TaskORM
+
 # =============================================================================
 # EXCEPTION HANDLERS TESTS
 # =============================================================================
@@ -884,8 +888,6 @@ class TestDatabaseModels:
 
     def test_create_user(self, session):
         """Тест создания пользователя."""
-        from users.adapters.orm import UserORM
-
         user = UserORM(
             email="test@example.com",
             username="testuser",
@@ -902,8 +904,6 @@ class TestDatabaseModels:
 
     def test_create_product(self, session, user):
         """Тест создания продукта."""
-        from products.adapters.orm import ProductORM
-
         product = ProductORM(
             user_id=user.id,
             name="Test Product",
@@ -921,8 +921,6 @@ class TestDatabaseModels:
 
     def test_create_task(self, session, user):
         """Тест создания задачи ценообразования."""
-        from products.adapters.orm import ProductORM, TaskORM
-
         # Сначала создаем продукт
         product = ProductORM(
             user_id=user.id, name="Test Product", category_name="Electronics"
@@ -946,8 +944,6 @@ class TestDatabaseModels:
 
     def test_fail_create_task_without_product(self, session):
         """Тест создания задачи без продукта."""
-        from products.adapters.orm import TaskORM
-
         task = TaskORM(product_id=999, type="pricing")
         with pytest.raises(Exception):
             session.add(task)
