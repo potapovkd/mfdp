@@ -153,7 +153,17 @@ jobs:
           echo "⚠️ **Code quality issues detected in:** $failed_checks" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Please review the issues above and fix them before merging." >> $GITHUB_STEP_SUMMARY
-          echo "Workflow completed with warnings - please address code quality issues."
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Quick fix commands:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`black src/\` - Fix code formatting" >> $GITHUB_STEP_SUMMARY
+          echo "- \`isort src/\` - Fix import sorting" >> $GITHUB_STEP_SUMMARY
+          echo "- \`flake8 src/\` - Check linting issues" >> $GITHUB_STEP_SUMMARY
+          echo "- \`mypy src/\` - Check type issues" >> $GITHUB_STEP_SUMMARY
+          echo "- \`bandit -r src/\` - Review security issues" >> $GITHUB_STEP_SUMMARY
+          echo "- \`safety check\` - Review vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          # Fail the workflow with clear error message
+          echo "::error title=Code Quality Failed::Code quality checks failed. See warnings above for details."
+          exit 1
         else
           echo "🎉 **All code quality checks passed!**" >> $GITHUB_STEP_SUMMARY
         fi 

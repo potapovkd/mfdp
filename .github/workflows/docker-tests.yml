@@ -150,7 +150,15 @@ jobs:
           echo "⚠️ **Docker tests with issues:** $failed_tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Please review the failed Docker tests above and fix them before merging." >> $GITHUB_STEP_SUMMARY
-          echo "Docker workflow completed with warnings - please address failing tests."
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Debugging commands:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docker compose build\` - Rebuild images" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docker compose up -d db redis rabbitmq\` - Start services" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docker compose run --rm api pytest src/tests/ -v\` - Run tests in Docker" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docker compose logs\` - Check service logs" >> $GITHUB_STEP_SUMMARY
+          # Fail the workflow with clear error message
+          echo "::error title=Docker Tests Failed::Some Docker tests failed. See warnings above for details."
+          exit 1
         else
           echo "🎉 **All Docker tests passed successfully!**" >> $GITHUB_STEP_SUMMARY
         fi 

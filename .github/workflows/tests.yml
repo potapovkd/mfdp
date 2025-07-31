@@ -246,7 +246,15 @@ jobs:
           echo "⚠️ **Tests with issues:** $failed_tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Please review the failed tests above and fix them before merging." >> $GITHUB_STEP_SUMMARY
-          echo "Workflow completed with test warnings - please address failing tests."
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Debugging commands:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`cd src && python -m pytest tests/test_db.py -v\` - Run database tests" >> $GITHUB_STEP_SUMMARY
+          echo "- \`cd src && python -m pytest tests/test_user_api.py -v\` - Run user API tests" >> $GITHUB_STEP_SUMMARY
+          echo "- \`cd src && python -m pytest tests/test_integration.py -v\` - Run integration tests" >> $GITHUB_STEP_SUMMARY
+          echo "- \`cd src && python -m pytest tests/test_e2e.py -v\` - Run E2E tests" >> $GITHUB_STEP_SUMMARY
+          # Fail the workflow with clear error message
+          echo "::error title=Tests Failed::Some tests failed. See warnings above for details."
+          exit 1
         else
           echo "🎉 **All tests passed successfully!**" >> $GITHUB_STEP_SUMMARY
         fi 
