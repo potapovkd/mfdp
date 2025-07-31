@@ -136,8 +136,11 @@ jobs:
       if: always()
       run: |
         cd src
-        python -m pytest tests/test_unit.py -v
-        echo "status=$?" >> $GITHUB_OUTPUT
+        echo "Running unit tests..."
+        python -m pytest tests/test_unit.py -v --tb=short
+        exit_code=$?
+        echo "Unit tests exit code: $exit_code"
+        echo "status=$exit_code" >> $GITHUB_OUTPUT
 
     - name: Run integration tests
       id: integration_tests
@@ -232,12 +235,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Please review the failed tests above and fix them before merging." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Debugging commands:**" >> $GITHUB_STEP_SUMMARY
-          echo "- \`cd src && python -m pytest tests/test_db.py -v\` - Run database tests" >> $GITHUB_STEP_SUMMARY
-          echo "- \`cd src && python -m pytest tests/test_user_api.py -v\` - Run user API tests" >> $GITHUB_STEP_SUMMARY
-          echo "- \`cd src && python -m pytest tests/test_integration.py -v\` - Run integration tests" >> $GITHUB_STEP_SUMMARY
-          echo "- \`cd src && python -m pytest tests/test_e2e.py -v\` - Run E2E tests" >> $GITHUB_STEP_SUMMARY
-          echo "- \`cd src && python -m pytest tests/ --cov=. --cov-report=term\` - Check test coverage" >> $GITHUB_STEP_SUMMARY
+                  echo "**Debugging commands:**" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/test_unit.py -v\` - Run unit tests" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/test_integration.py -v\` - Run integration tests" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/test_e2e.py -v\` - Run E2E tests" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/ --cov=. --cov-report=term\` - Check test coverage" >> $GITHUB_STEP_SUMMARY
           # Fail the workflow with clear error message
           echo "::error title=Tests Failed::Some tests failed. See warnings above for details."
           exit 1
