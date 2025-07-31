@@ -349,11 +349,12 @@ async def export_pricing_results(
 
         # Создаем Excel файл в памяти с подавлением warnings
         output = io.BytesIO()
-        
+
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            
+
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 df.to_excel(writer, sheet_name="Price Predictions", index=False)
 

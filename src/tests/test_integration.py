@@ -1,17 +1,7 @@
 """Интеграционные тесты для системы ценовой оптимизации."""
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-import asyncio
-
-from base.exceptions import (
-    AuthenticationError,
-    AuthorizationError,
-    DatabaseError,
-    ProductNotFoundError,
-    TaskQueueError,
-    MLServiceError,
-)
+from fastapi.testclient import TestClient
 
 
 class TestPricingIntegration:
@@ -21,6 +11,7 @@ class TestPricingIntegration:
         """Тест инициализации ML сервиса ценообразования."""
         try:
             from pricing.pricing_service import PricingService
+
             service = PricingService()
             assert service is not None
             print("✅ ML сервис инициализирован")
@@ -31,17 +22,20 @@ class TestPricingIntegration:
         """Тест формата предсказаний модели."""
         try:
             from pricing.pricing_service import PricingService
+
             service = PricingService()
-            
-            test_data = [{
-                "name": "Test Product",
-                "category_name": "Electronics",
-                "brand_name": "TestBrand",
-                "item_description": "Test description",
-                "item_condition_id": 1,
-                "shipping": 0
-            }]
-            
+
+            test_data = [
+                {
+                    "name": "Test Product",
+                    "category_name": "Electronics",
+                    "brand_name": "TestBrand",
+                    "item_description": "Test description",
+                    "item_condition_id": 1,
+                    "shipping": 0,
+                }
+            ]
+
             predictions = service.predict_prices(test_data)
             assert isinstance(predictions, list)
             assert len(predictions) == len(test_data)
@@ -54,10 +48,11 @@ class TestPricingIntegration:
         """Тест валидации данных для ценообразования."""
         try:
             from pricing.pricing_service import PricingService
+
             service = PricingService()
-            
+
             invalid_data = [{"invalid": "data"}]
-            
+
             predictions = service.predict_prices(invalid_data)
             assert predictions is not None
         except (ValueError, KeyError, Exception):
@@ -67,8 +62,9 @@ class TestPricingIntegration:
         """Тест обработки ошибок в сервисе ценообразования."""
         try:
             from pricing.pricing_service import PricingService
+
             service = PricingService()
-            
+
             predictions = service.predict_prices([])
             assert predictions == []
             print("✅ Обработка пустых данных корректна")
@@ -78,25 +74,29 @@ class TestPricingIntegration:
     def test_batch_processing_performance(self):
         """Тест производительности пакетной обработки."""
         try:
-            from pricing.pricing_service import PricingService
             import time
-            
+
+            from pricing.pricing_service import PricingService
+
             service = PricingService()
-            
+
             batch_size = 5
-            test_batch = [{
-                "name": f"Product {i}",
-                "category_name": "Electronics",
-                "brand_name": "TestBrand",
-                "item_description": f"Description {i}",
-                "item_condition_id": 1,
-                "shipping": 0
-            } for i in range(batch_size)]
-            
+            test_batch = [
+                {
+                    "name": f"Product {i}",
+                    "category_name": "Electronics",
+                    "brand_name": "TestBrand",
+                    "item_description": f"Description {i}",
+                    "item_condition_id": 1,
+                    "shipping": 0,
+                }
+                for i in range(batch_size)
+            ]
+
             start_time = time.time()
             predictions = service.predict_prices(test_batch)
             processing_time = time.time() - start_time
-            
+
             assert len(predictions) == batch_size
             assert processing_time < 5.0
             print(f"✅ Batch обработка завершена за {processing_time:.2f}с")
@@ -112,21 +112,21 @@ class TestAPIIntegration:
         """Мокированное приложение."""
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        
+
         app = FastAPI()
-        
+
         @app.get("/docs")
         def docs():
             return {"title": "Test API", "version": "1.0.0"}
-        
+
         @app.post("/api/v1/pricing/predict/")
         def predict():
             return {"predictions": [25.0]}
-        
+
         @app.get("/api/v1/products/")
         def get_products():
             return []
-            
+
         return TestClient(app)
 
     def test_api_health_check(self, mock_app):
@@ -138,16 +138,18 @@ class TestAPIIntegration:
     def test_pricing_endpoint_integration(self, mock_app):
         """Тест интеграции эндпоинта ценообразования."""
         test_data = {
-            "products": [{
-                "name": "Test Product",
-                "category_name": "Electronics",
-                "brand_name": "TestBrand",
-                "item_description": "Test description",
-                "item_condition_id": 1,
-                "shipping": 0
-            }]
+            "products": [
+                {
+                    "name": "Test Product",
+                    "category_name": "Electronics",
+                    "brand_name": "TestBrand",
+                    "item_description": "Test description",
+                    "item_condition_id": 1,
+                    "shipping": 0,
+                }
+            ]
         }
-        
+
         response = mock_app.post("/api/v1/pricing/predict/", json=test_data)
         assert response.status_code == 200
         print("✅ Pricing endpoint интеграция работает")
@@ -165,16 +167,16 @@ class TestConfigIntegration:
     def test_environment_config_loading(self):
         """Тест загрузки конфигурации окружения."""
         from base.config import get_settings
-        
+
         settings = get_settings()
         assert settings is not None
-        assert hasattr(settings, 'db_host')
+        assert hasattr(settings, "db_host")
         print("✅ Конфигурация загружается корректно")
 
     def test_database_config_validation(self):
         """Тест валидации конфигурации базы данных."""
         from base.config import get_settings
-        
+
         settings = get_settings()
         assert settings.db_host is not None
         assert isinstance(settings.db_host, str)
@@ -189,31 +191,33 @@ class TestErrorHandling:
         """Мокированный клиент."""
         from fastapi import FastAPI, HTTPException
         from fastapi.testclient import TestClient
-        
+
         app = FastAPI()
-        
+
         @app.get("/api/v1/products/")
         def get_products():
             raise HTTPException(status_code=401, detail="Authentication failed")
-        
+
         @app.delete("/api/v1/products/1")
         def delete_product():
             raise HTTPException(status_code=403, detail="No permission to delete")
-        
+
         @app.get("/api/v1/products/db-error")
         def db_error():
             raise HTTPException(status_code=500, detail="Database connection failed")
-        
+
         @app.get("/api/v1/products/999")
         def not_found():
             raise HTTPException(status_code=404, detail="Product with id 999 not found")
-        
+
         @app.post("/api/v1/users/calculate-cost/")
         def calculate_cost(items_count: int):
             if items_count > 100:
-                raise HTTPException(status_code=400, detail="Превышен лимит товаров: 100")
+                raise HTTPException(
+                    status_code=400, detail="Превышен лимит товаров: 100"
+                )
             return {"cost": "50.00"}
-            
+
         return TestClient(app)
 
     def test_authentication_error_handling(self, mock_client):
@@ -252,7 +256,8 @@ class TestErrorHandling:
         """Тест обработки ошибок очереди задач."""
         try:
             from products.services.task_queue import TaskQueueService
-            service = TaskQueueService()
+
+            _ = TaskQueueService()
             print("✅ TaskQueue сервис инициализирован")
         except Exception:
             print("✅ Обработка ошибок TaskQueue работает")
@@ -261,7 +266,8 @@ class TestErrorHandling:
         """Тест обработки ошибок ML сервиса."""
         try:
             from pricing.pricing_service import PricingService
-            service = PricingService()
+
+            _ = PricingService()
             print("✅ ML сервис инициализирован")
         except Exception:
             print("✅ Обработка ошибок ML сервиса работает")

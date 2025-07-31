@@ -107,9 +107,11 @@ class TestModelTrainer:
         with patch("pricing.model_trainer.CatBoostRegressor") as mock_catboost_class:
             mock_model = Mock()
             mock_model.feature_importances_ = np.array([0.5, 0.3, 0.2])
+
             # Мокаем predict чтобы возвращал правильное количество предсказаний
             def mock_predict(X):
-                return np.array([10.0, 15.0, 12.0, 13.0, 14.0][:len(X)])
+                return np.array([10.0, 15.0, 12.0, 13.0, 14.0][: len(X)])
+
             mock_model.predict = Mock(side_effect=mock_predict)
             mock_model.fit = Mock()
             mock_model.save_model = Mock()
@@ -126,10 +128,10 @@ class TestModelTrainer:
             mock_model.save_model.assert_called_once()
 
             # Проверяем что метрики были созданы
-            assert hasattr(trainer.metrics, 'metrics')
-            assert 'train' in trainer.metrics.metrics
-            assert 'test' in trainer.metrics.metrics
-            assert hasattr(trainer.metrics, 'feature_importance')
+            assert hasattr(trainer.metrics, "metrics")
+            assert "train" in trainer.metrics.metrics
+            assert "test" in trainer.metrics.metrics
+            assert hasattr(trainer.metrics, "feature_importance")
 
     def test_dataset_statistics(self, trainer):
         """Тест сбора статистик датасета."""

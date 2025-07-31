@@ -32,7 +32,7 @@ class JWTHandler:
 
         # Конвертируем datetime в timestamp для JWT
         expire_timestamp = int(expire.timestamp())
-        
+
         to_encode = {"id": user_id, "exp": expire_timestamp, "type": "access"}
         try:
             encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm="HS256")

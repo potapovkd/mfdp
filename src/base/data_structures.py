@@ -1,6 +1,6 @@
 """Структуры данных для приложения."""
 
-from datetime import datetime
+from dataclasses import dataclass
 from typing import Optional
 
 from pydantic import BaseModel

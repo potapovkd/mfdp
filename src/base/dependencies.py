@@ -84,7 +84,9 @@ async def get_token_from_header(
 
         # Для тестов пропускаем валидацию
         if token == "test_token":
-            expire_timestamp = int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp())
+            expire_timestamp = int(
+                (datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp()
+            )
             return JWTPayloadDTO(
                 id=1,
                 exp=expire_timestamp,
