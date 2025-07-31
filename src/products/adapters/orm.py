@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from users.adapters.orm import UserORM
 
-
-from sqlalchemy import Float, ForeignKey, func, Integer, String, Text
+from sqlalchemy import Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from base.config import TaskStatus
@@ -38,9 +37,7 @@ class ProductORM(Base):
     tasks: Mapped[list["TaskORM"]] = relationship(
         back_populates="product", lazy="selectin"
     )
-    user: Mapped["UserORM"] = relationship(
-        back_populates="products", lazy="selectin"
-    )
+    user: Mapped["UserORM"] = relationship(back_populates="products", lazy="selectin")
 
 
 class PricePredictionORM(Base):
@@ -80,7 +77,9 @@ class TaskORM(Base):
         default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    product: Mapped["ProductORM"] = relationship(back_populates="tasks", lazy="selectin")
+    product: Mapped["ProductORM"] = relationship(
+        back_populates="tasks", lazy="selectin"
+    )
 
 
 # All deprecated ORM models removed after migration

@@ -1,30 +1,22 @@
-"""Структуры данных для формализации запросов и ответов API."""
+"""Структуры данных для приложения."""
 
-from typing import Literal
+from typing import Optional
 
 from pydantic import BaseModel
 
 
 class JWTPayloadDTO(BaseModel):
-    """DTO с данными для создания JWT."""
+    """DTO для полезной нагрузки JWT токена."""
 
     id: int
+    exp: Optional[int] = None  # Unix timestamp вместо datetime
+    type: Optional[str] = None
 
 
-class JWTPayloadExtendedDTO(JWTPayloadDTO):
-    """DTO с данными JWT."""
-
-    token_type: Literal["access", "refresh"]
-    exp: int
-
-
-class AccessTokenDTO(BaseModel):
-    """DTO с access_token."""
+class TokenResponse(BaseModel):
+    """Ответ с токенами."""
 
     access_token: str
-
-
-class TokenPairDTO(AccessTokenDTO):
-    """DTO с access и refresh токеном."""
-
-    refresh_token: str
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    expires_in: Optional[int] = None

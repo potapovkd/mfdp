@@ -1,0 +1,5 @@
+# Bandit configuration file
+# Игнорируем тестовые файлы и некоторые ложные срабатывания
+
+exclude_dirs: ['tests', 'src/tests']
+skips: ['B101']  # Игнорируем assert в тестах 

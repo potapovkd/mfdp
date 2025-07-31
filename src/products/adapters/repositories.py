@@ -2,13 +2,13 @@
 
 from abc import ABC, abstractmethod
 
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from base.exceptions import DoesntExistException
-from .orm import ProductORM
 from products.domain.models import Product, ProductData
+
+from .orm import ProductORM
 
 
 class ProductAbstractDatabaseRepository(ABC):
@@ -55,7 +55,7 @@ class ProductSqlAlchemyDatabaseRepository(ProductAbstractDatabaseRepository):
             item_description=product_orm.item_description,
             item_condition_id=product_orm.item_condition_id,
             shipping=product_orm.shipping,
-            created_at=product_orm.created_at
+            created_at=product_orm.created_at,
         )
 
     async def add(self, user_id: int, product_data: ProductData) -> Product:
@@ -82,7 +82,7 @@ class ProductSqlAlchemyDatabaseRepository(ProductAbstractDatabaseRepository):
             item_description=product_data.item_description,
             item_condition_id=product_data.item_condition_id,
             shipping=product_data.shipping,
-            created_at=product_orm.created_at
+            created_at=product_orm.created_at,
         )
 
     async def delete(self, product_id: int, user_id: int) -> None:
@@ -112,7 +112,7 @@ class ProductSqlAlchemyDatabaseRepository(ProductAbstractDatabaseRepository):
                 item_description=p.item_description,
                 item_condition_id=p.item_condition_id,
                 shipping=p.shipping,
-                created_at=p.created_at
+                created_at=p.created_at,
             )
             for p in products_orm
         ]

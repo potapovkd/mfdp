@@ -3,10 +3,14 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 if TYPE_CHECKING:
     from users.adapters.repositories import IUserRepository
 else:
     from users.adapters.repositories import IUserRepository
+
+from users.adapters.repository_impl import PostgreSQLUserRepository
 
 
 class IUserUnitOfWork(ABC):
@@ -39,6 +43,7 @@ class InMemoryUserUnitOfWork(IUserUnitOfWork):
     def __init__(self):
         """Инициализация."""
         from users.adapters.repository_impl import InMemoryUserRepository
+
         self.users = InMemoryUserRepository()
 
     async def commit(self):
@@ -48,11 +53,6 @@ class InMemoryUserUnitOfWork(IUserUnitOfWork):
     async def rollback(self):
         """Откат изменений."""
         pass
-
-
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from users.adapters.repository_impl import PostgreSQLUserRepository
 
 
 class PostgreSQLUserUnitOfWork(IUserUnitOfWork):

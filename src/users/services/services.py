@@ -4,7 +4,15 @@ import hashlib
 from decimal import Decimal
 from typing import Optional
 
-from users.domain.models import User, UserCredentials, BillingRequest, BillingResponse, PricingTariff
+from base.exceptions import AuthenticationError
+from users.domain.models import (
+    BillingRequest,
+    BillingResponse,
+    PricingTariff,
+    User,
+    UserCredentials,
+)
+
 from .unit_of_work import IUserUnitOfWork
 
 
@@ -14,7 +22,7 @@ class UserService:
     def __init__(self, uow: IUserUnitOfWork) -> None:
         """Инициализация сервиса."""
         self.uow = uow
-        self.tariff = PricingTariff()
+        self.tariff: PricingTariff = PricingTariff()
 
     async def add_user(self, user: UserCredentials) -> None:
         """Добавление пользователя."""
@@ -32,9 +40,7 @@ class UserService:
         async with self.uow:
             return await self.uow.users.get_user_by_id(user_id)
 
-    async def verify_credentials(
-        self, email: str, password: str
-    ) -> Optional[User]:
+    async def verify_credentials(self, email: str, password: str) -> Optional[User]:
         """Проверка учетных данных пользователя."""
         async with self.uow:
             user = await self.uow.users.get_user_by_email(email)
@@ -45,11 +51,31 @@ class UserService:
                     return user
             return None
 
+    async def authenticate_user(self, user_credentials: UserCredentials) -> str:
+        """Аутентификация пользователя и возврат JWT токена."""
+        user = await self.verify_credentials(
+            user_credentials.email, user_credentials.password
+        )
+        if not user:
+            raise AuthenticationError("Неверные учетные данные")
+
+        # Создаем JWT токен
+        from base.config import get_settings
+        from base.utils import JWTHandler
+
+        settings = get_settings()
+        jwt_handler = JWTHandler(settings.secret_key)
+        token: str = jwt_handler.create_access_token(user.id)
+
+        return token
+
     async def get_user_balance(self, user_id: int) -> Optional[Decimal]:
         """Получение баланса пользователя."""
         async with self.uow:
             user = await self.uow.users.get_user_by_id(user_id)
-            return user.balance if user else None
+            if user is None:
+                return None
+            return Decimal(str(user.balance))
 
     async def update_user_balance(self, user_id: int, amount: Decimal) -> bool:
         """Обновление баланса пользователя."""
@@ -57,7 +83,7 @@ class UserService:
             success = await self.uow.users.update_balance(user_id, amount)
             if success:
                 await self.uow.commit()
-            return success
+            return bool(success)
 
     async def charge_user(self, billing_request: BillingRequest) -> BillingResponse:
         """Списание средств с баланса пользователя."""
@@ -68,52 +94,59 @@ class UserService:
                     success=False,
                     new_balance=Decimal("0.00"),
                     charged_amount=Decimal("0.00"),
-                    message="Пользователь не найден"
+                    message="Пользователь не найден",
                 )
 
-            if user.balance < billing_request.amount:
+            user_balance = Decimal(str(user.balance))
+            if user_balance < billing_request.amount:
                 return BillingResponse(
                     success=False,
-                    new_balance=user.balance,
+                    new_balance=user_balance,
                     charged_amount=Decimal("0.00"),
-                    message=f"Недостаточно средств. Требуется: ${billing_request.amount}, доступно: ${user.balance}"
+                    message=f"Недостаточно средств. Требуется: ${billing_request.amount}, доступно: ${user_balance}",
                 )
 
-            new_balance = user.balance - billing_request.amount
-            success = await self.uow.users.update_balance(billing_request.user_id, new_balance)
-            
+            new_balance = user_balance - billing_request.amount
+            success = await self.uow.users.update_balance(
+                billing_request.user_id, new_balance
+            )
+
             if success:
                 await self.uow.commit()
                 return BillingResponse(
                     success=True,
                     new_balance=new_balance,
                     charged_amount=billing_request.amount,
-                    message=f"Списано ${billing_request.amount} за {billing_request.description}"
+                    message=f"Списано ${billing_request.amount} за {billing_request.description}",
                 )
-            else:
-                return BillingResponse(
-                    success=False,
-                    new_balance=user.balance,
-                    charged_amount=Decimal("0.00"),
-                    message="Ошибка при списании средств"
-                )
+
+            return BillingResponse(
+                success=False,
+                new_balance=user_balance,
+                charged_amount=Decimal("0.00"),
+                message="Ошибка при списании средств",
+            )
 
     def calculate_pricing_cost(self, items_count: int) -> Decimal:
         """Расчет стоимости прогнозирования для указанного количества товаров."""
         if items_count <= 0:
             return Decimal("0.00")
-        
+
         if items_count > self.tariff.max_items_per_request:
-            raise ValueError(f"Превышен лимит товаров в запросе: {items_count} > {self.tariff.max_items_per_request}")
-        
-        base_cost = self.tariff.single_item_price * items_count
-        
+            raise ValueError(
+                f"Превышен лимит товаров в запросе: {items_count} > {self.tariff.max_items_per_request}"
+            )
+
+        base_cost = Decimal(str(self.tariff.single_item_price)) * items_count
+
         # Применяем скидку для bulk запросов
         if items_count >= self.tariff.bulk_discount_threshold:
-            discount_percent = Decimal(str(self.tariff.bulk_discount_percent)) / Decimal("100")
+            discount_percent = Decimal(
+                str(self.tariff.bulk_discount_percent)
+            ) / Decimal("100")
             discount = base_cost * discount_percent
             return base_cost - discount
-        
+
         return base_cost
 
     def get_tariff_info(self) -> PricingTariff:

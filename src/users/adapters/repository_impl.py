@@ -1,20 +1,21 @@
 """Реализации репозиториев для работы с пользователями."""
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from users.domain.models import User, UserCredentials
 from users.adapters.orm import UserORM
+from users.domain.models import User, UserCredentials
+
 from .repositories import IUserRepository
 
 
 class InMemoryUserRepository(IUserRepository):
-    """In-memory репозиторий пользователей."""
+    """In-memory репозиторий пользователей для тестов."""
 
     def __init__(self) -> None:
         """Инициализация репозитория."""
@@ -31,7 +32,7 @@ class InMemoryUserRepository(IUserRepository):
             id=user_id,
             email=user.email,
             password=user.password,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             balance=Decimal("0.00"),
         )
 
@@ -75,9 +76,7 @@ class PostgreSQLUserRepository(IUserRepository):
 
     async def get_user_by_email(self, email: str) -> Optional[User]:
         """Получение пользователя по email."""
-        result = await self.session.execute(
-            select(UserORM).filter_by(email=email)
-        )
+        result = await self.session.execute(select(UserORM).filter_by(email=email))
         user_orm = result.scalars().first()
 
         if user_orm:
@@ -92,9 +91,7 @@ class PostgreSQLUserRepository(IUserRepository):
 
     async def get_user_by_id(self, user_id: int) -> Optional[User]:
         """Получение пользователя по ID."""
-        result = await self.session.execute(
-            select(UserORM).filter_by(id=user_id)
-        )
+        result = await self.session.execute(select(UserORM).filter_by(id=user_id))
         user_orm = result.scalars().first()
 
         if user_orm:
@@ -115,6 +112,6 @@ class PostgreSQLUserRepository(IUserRepository):
                 .where(UserORM.id == user_id)
                 .values(balance=float(new_balance))
             )
-            return result.rowcount > 0
+            return bool(result.rowcount > 0)
         except Exception:
-            return False 
+            return False

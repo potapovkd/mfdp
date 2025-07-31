@@ -1,0 +1,248 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop, refactor ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: pricing_optimization
+          POSTGRES_USER: pricing_user
+          POSTGRES_PASSWORD: pricing_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      rabbitmq:
+        image: rabbitmq:3-management
+        env:
+          RABBITMQ_DEFAULT_USER: pricing
+          RABBITMQ_DEFAULT_PASS: pricing123
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5672:5672
+          - 15672:15672
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements.dev.txt
+
+    - name: Wait for services
+      run: |
+        # Wait for PostgreSQL
+        while ! nc -z localhost 5432; do
+          echo "Waiting for PostgreSQL..."
+          sleep 1
+        done
+        
+        # Wait for Redis
+        while ! nc -z localhost 6379; do
+          echo "Waiting for Redis..."
+          sleep 1
+        done
+        
+        # Wait for RabbitMQ
+        while ! nc -z localhost 5672; do
+          echo "Waiting for RabbitMQ..."
+          sleep 1
+        done
+        
+        echo "All services are ready!"
+
+    - name: Set environment variables
+      run: |
+        echo "DB_HOST=localhost" >> $GITHUB_ENV
+        echo "DB_PORT=5432" >> $GITHUB_ENV
+        echo "DB_NAME=pricing_optimization" >> $GITHUB_ENV
+        echo "DB_USER=pricing_user" >> $GITHUB_ENV
+        echo "DB_PASSWORD=pricing_password" >> $GITHUB_ENV
+        echo "REDIS_HOST=localhost" >> $GITHUB_ENV
+        echo "REDIS_PORT=6379" >> $GITHUB_ENV
+        echo "REDIS_DB=0" >> $GITHUB_ENV
+        echo "RABBITMQ_HOST=localhost" >> $GITHUB_ENV
+        echo "RABBITMQ_PORT=5672" >> $GITHUB_ENV
+        echo "RABBITMQ_USER=pricing" >> $GITHUB_ENV
+        echo "RABBITMQ_PASS=pricing123" >> $GITHUB_ENV
+        echo "SECRET_KEY=test-secret-key-for-ci" >> $GITHUB_ENV
+        echo "PYTHONPATH=/home/runner/work/ml-ops-final/ml-ops-final/src" >> $GITHUB_ENV
+
+    - name: Create models directory
+      run: |
+        mkdir -p models
+        # Create dummy model files for tests
+        echo "dummy model" > models/catboost_pricing_model.cbm
+        echo "dummy pipeline" > models/preprocessing_pipeline.pkl
+
+    - name: Initialize database
+      id: init_db
+      continue-on-error: true
+      run: |
+        cd src
+        python -c "
+        import asyncio
+        from base.orm import init_db
+        asyncio.run(init_db())
+        print('Database initialized successfully')
+        "
+        echo "status=$?" >> $GITHUB_OUTPUT
+
+    - name: Run unit tests
+      id: unit_tests
+      continue-on-error: true
+      if: always()
+      run: |
+        cd src
+        echo "Running unit tests..."
+        python -m pytest tests/test_unit.py -v --tb=short
+        exit_code=$?
+        echo "Unit tests exit code: $exit_code"
+        echo "status=$exit_code" >> $GITHUB_OUTPUT
+
+    - name: Run integration tests
+      id: integration_tests
+      continue-on-error: true
+      if: always()
+      run: |
+        cd src
+        python -m pytest tests/test_integration.py -v
+        echo "status=$?" >> $GITHUB_OUTPUT
+
+    - name: Run E2E tests (excluding ML worker integration)
+      id: e2e_tests
+      continue-on-error: true
+      if: always()
+      run: |
+        cd src
+        python -m pytest tests/test_e2e.py -v -m "not integration"
+        echo "status=$?" >> $GITHUB_OUTPUT
+
+    - name: Generate test coverage report
+      id: coverage
+      continue-on-error: true
+      if: always()
+      run: |
+        cd src
+        python -m pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-report=term --cov-fail-under=65
+        echo "status=$?" >> $GITHUB_OUTPUT
+
+    - name: Upload coverage to Codecov
+      if: github.event_name == 'push' && steps.coverage.outputs.status == '0'
+      uses: codecov/codecov-action@v4
+      with:
+        file: src/coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+    - name: Collect test results and create summary
+      if: always()
+      run: |
+        echo "## 🧪 Test Results Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        failed_tests=""
+        
+        if [ "${{ steps.init_db.outputs.status }}" != "0" ]; then
+          echo "❌ **Database Initialization**: Failed to initialize database" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Database Init::Database initialization failed. Check connection settings."
+          failed_tests="$failed_tests db-init"
+        else
+          echo "✅ **Database Initialization**: Successfully initialized" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+
+        
+        if [ "${{ steps.unit_tests.outputs.status }}" != "0" ]; then
+          echo "❌ **Unit Tests**: Unit tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Unit Tests::Unit tests failed. Check test output above."
+          failed_tests="$failed_tests unit-tests"
+        else
+          echo "✅ **Unit Tests**: All unit tests passed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.integration_tests.outputs.status }}" != "0" ]; then
+          echo "❌ **Integration Tests**: Integration tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Integration Tests::Integration tests failed. Check test_integration.py output above."
+          failed_tests="$failed_tests integration-tests"
+        else
+          echo "✅ **Integration Tests**: All integration tests passed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.e2e_tests.outputs.status }}" != "0" ]; then
+          echo "❌ **E2E Tests**: End-to-end tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=E2E Tests::End-to-end tests failed. Check test_e2e.py output above."
+          failed_tests="$failed_tests e2e-tests"
+        else
+          echo "✅ **E2E Tests**: All end-to-end tests passed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.coverage.outputs.status }}" != "0" ]; then
+          echo "❌ **Test Coverage**: Coverage below threshold" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Coverage::Test coverage is below 65%. Write more tests to improve coverage."
+          failed_tests="$failed_tests coverage"
+        else
+          echo "✅ **Test Coverage**: Coverage meets threshold (≥65%)" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -n "$failed_tests" ]; then
+          echo "::warning title=Test Results::Some tests failed:$failed_tests"
+          echo "⚠️ **Tests with issues:** $failed_tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please review the failed tests above and fix them before merging." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "**Debugging commands:**" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/test_unit.py -v\` - Run unit tests" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/test_integration.py -v\` - Run integration tests" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/test_e2e.py -v\` - Run E2E tests" >> $GITHUB_STEP_SUMMARY
+        echo "- \`cd src && python -m pytest tests/ --cov=. --cov-report=term\` - Check test coverage" >> $GITHUB_STEP_SUMMARY
+          # Fail the workflow with clear error message
+          echo "::error title=Tests Failed::Some tests failed. See warnings above for details."
+          exit 1
+        else
+          echo "🎉 **All tests passed successfully!**" >> $GITHUB_STEP_SUMMARY
+        fi 

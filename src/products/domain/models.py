@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from base.config import TaskStatus
 
@@ -18,17 +18,19 @@ class ProductData(BaseModel):
     item_condition_id: int  # 1-5, где 1=новый, 5=плохое состояние
     shipping: int  # 0=покупатель платит, 1=продавец платит
 
-    from pydantic import validator  # noqa: WPS433
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v):
+        """Валидация имени товара."""
+        if not v or not v.strip():
+            raise ValueError("Name is required")
+        return v.strip()
 
-    @validator("name")
-    def name_must_not_be_empty(cls, v):  # noqa: D401, N805
-        if not v.strip():
-            raise ValueError("name must not be empty")
-        return v
-
-    @validator("item_condition_id")
-    def item_condition_in_range(cls, v):  # noqa: D401, N805
-        if v not in {1, 2, 3, 4, 5}:
+    @field_validator("item_condition_id")
+    @classmethod
+    def validate_condition(cls, v):
+        """Валидация состояния товара."""
+        if v not in [1, 2, 3, 4, 5]:
             raise ValueError("item_condition_id must be between 1 and 5")
         return v
 

@@ -26,8 +26,8 @@ services:
 
   ml-worker:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: ml_worker/Dockerfile
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -42,7 +42,7 @@ services:
       POLL_TIMEOUT: "1"
     volumes:
       - ../models:/app/models:ro
-      - ./logs:/app/logs
+      - ./logs:/app/ml_worker/logs
     depends_on:
       - redis
       - rabbitmq

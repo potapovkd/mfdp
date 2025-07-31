@@ -1,12 +1,12 @@
 """ORM модели для пользователей."""
 
-from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from products.adapters.orm import ProductORM
 
-from sqlalchemy import DateTime, String, Numeric
+from sqlalchemy import DateTime, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from base.orm import Base
@@ -23,7 +23,7 @@ class UserORM(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     products: Mapped[list["ProductORM"]] = relationship(
