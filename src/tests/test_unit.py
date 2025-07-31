@@ -25,12 +25,12 @@ from base.exceptions import (
     ValidationError,
 )
 from base.utils import JWTHandler
-from users.domain.models import BillingRequest, PricingTariff, UserCredentials
-from users.services.services import UserService
+from products.adapters.orm import ProductORM, TaskORM
 
 # Импортируем ORM модели для тестов
 from users.adapters.orm import UserORM
-from products.adapters.orm import ProductORM, TaskORM
+from users.domain.models import BillingRequest, PricingTariff, UserCredentials
+from users.services.services import UserService
 
 # =============================================================================
 # EXCEPTION HANDLERS TESTS
