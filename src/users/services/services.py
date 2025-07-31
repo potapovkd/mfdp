@@ -65,7 +65,7 @@ class UserService:
 
         settings = get_settings()
         jwt_handler = JWTHandler(settings.secret_key)
-        token = jwt_handler.create_access_token(user.id)
+        token: str = jwt_handler.create_access_token(user.id)
 
         return token
 

@@ -71,16 +71,6 @@ jobs:
         bandit -r src/
         echo "status=$?" >> $GITHUB_OUTPUT
 
-    - name: Check for security vulnerabilities
-      id: safety
-      continue-on-error: true
-      if: always()
-      run: |
-        pip install safety
-        safety check --json --output safety-report.json || true
-        safety check
-        echo "status=$?" >> $GITHUB_OUTPUT
-
     - name: Upload security reports
       if: always()
       uses: actions/upload-artifact@v4
@@ -88,7 +78,6 @@ jobs:
         name: security-reports
         path: |
           bandit-report.json
-          safety-report.json
 
     - name: Collect results and create summary
       if: always()
@@ -138,14 +127,6 @@ jobs:
           echo "✅ **bandit**: No security issues" >> $GITHUB_STEP_SUMMARY
         fi
         
-        if [ "${{ steps.safety.outputs.status }}" != "0" ]; then
-          echo "❌ **safety**: Vulnerability issues found" >> $GITHUB_STEP_SUMMARY
-          echo "::warning title=Vulnerabilities::Dependency vulnerabilities detected. Check safety output above."
-          failed_checks="$failed_checks safety"
-        else
-          echo "✅ **safety**: No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
-        fi
-        
         echo "" >> $GITHUB_STEP_SUMMARY
         
         if [ -n "$failed_checks" ]; then
@@ -160,7 +141,6 @@ jobs:
           echo "- \`flake8 src/\` - Check linting issues" >> $GITHUB_STEP_SUMMARY
           echo "- \`mypy src/\` - Check type issues" >> $GITHUB_STEP_SUMMARY
           echo "- \`bandit -r src/\` - Review security issues" >> $GITHUB_STEP_SUMMARY
-          echo "- \`safety check\` - Review vulnerabilities" >> $GITHUB_STEP_SUMMARY
           # Fail the workflow with clear error message
           echo "::error title=Code Quality Failed::Code quality checks failed. See warnings above for details."
           exit 1

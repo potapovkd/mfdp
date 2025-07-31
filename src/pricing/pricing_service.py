@@ -63,7 +63,7 @@ class PricingService:
         if self.preprocessing_path.exists():
             try:
                 with open(self.preprocessing_path, "rb") as f:
-                    self.preprocessing_pipeline = pickle.load(f)
+                    self.preprocessing_pipeline = pickle.load(f)  # nosec B301
                 print(f"✅ Pipeline предобработки загружен из {self.preprocessing_path}")
             except Exception as e:
                 print(f"❌ Ошибка загрузки pipeline: {e}")

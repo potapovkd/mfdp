@@ -10,6 +10,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+from base.data_structures import JWTPayloadDTO
+from base.orm import Base
+from users.adapters.orm import UserORM
+
 # Устанавливаем тестовые переменные окружения
 os.environ.setdefault("DB_USER", "test")
 os.environ.setdefault("DB_PASSWORD", "test")
@@ -26,10 +30,6 @@ os.environ.setdefault("MAX_PRICE_LIMIT", "10000.0")
 os.environ.setdefault("DISABLE_AUTH_FOR_TESTS", "1")
 os.environ.setdefault("MODEL_PATH", "pricing/catboost_model.pkl")
 os.environ.setdefault("PREPROCESSING_PATH", "pricing/preprocessing.pkl")
-
-from base.data_structures import JWTPayloadDTO
-from base.orm import Base
-from users.adapters.orm import UserORM
 
 # Подавление warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="sqlalchemy.*")

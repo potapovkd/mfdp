@@ -293,9 +293,9 @@ class TestE2EPerformance:
 
             try:
                 if "calculate-cost" in endpoint:
-                    response = client.post(endpoint)
+                    _ = client.post(endpoint)
                 else:
-                    response = client.get(endpoint)
+                    _ = client.get(endpoint)
 
                 end_time = time.time()
                 response_time = end_time - start_time

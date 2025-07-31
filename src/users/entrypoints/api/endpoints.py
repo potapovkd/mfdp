@@ -12,11 +12,7 @@ from fastapi.responses import StreamingResponse
 from base.data_structures import JWTPayloadDTO
 from base.dependencies import get_token_from_header
 from base.exceptions import AuthenticationError, DatabaseError
-from users.domain.models import (
-    UserCreateDTO,
-    UserLoginDTO,
-    UserLoginResponse,
-)
+from users.domain.models import UserCreateDTO, UserLoginDTO, UserLoginResponse
 from users.entrypoints.api.dependencies import UserServiceDependency
 
 router = APIRouter()

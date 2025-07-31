@@ -1,7 +1,6 @@
 """Интеграционные тесты для системы ценовой оптимизации."""
 
 import pytest
-from fastapi.testclient import TestClient
 
 
 class TestPricingIntegration:

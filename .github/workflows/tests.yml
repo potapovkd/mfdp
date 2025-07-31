@@ -172,7 +172,7 @@ jobs:
       if: always()
       run: |
         cd src
-        python -m pytest tests/ --cov=. --cov-report=xml --cov-report=html
+        python -m pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-report=term --cov-fail-under=65
         echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Upload coverage to Codecov
@@ -232,11 +232,11 @@ jobs:
         fi
         
         if [ "${{ steps.coverage.outputs.status }}" != "0" ]; then
-          echo "❌ **Coverage Report**: Failed to generate coverage report" >> $GITHUB_STEP_SUMMARY
-          echo "::warning title=Coverage::Failed to generate test coverage report."
+          echo "❌ **Test Coverage**: Coverage below threshold" >> $GITHUB_STEP_SUMMARY
+          echo "::warning title=Coverage::Test coverage is below 65%. Write more tests to improve coverage."
           failed_tests="$failed_tests coverage"
         else
-          echo "✅ **Coverage Report**: Coverage report generated successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Test Coverage**: Coverage meets threshold (≥65%)" >> $GITHUB_STEP_SUMMARY
         fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -252,6 +252,7 @@ jobs:
           echo "- \`cd src && python -m pytest tests/test_user_api.py -v\` - Run user API tests" >> $GITHUB_STEP_SUMMARY
           echo "- \`cd src && python -m pytest tests/test_integration.py -v\` - Run integration tests" >> $GITHUB_STEP_SUMMARY
           echo "- \`cd src && python -m pytest tests/test_e2e.py -v\` - Run E2E tests" >> $GITHUB_STEP_SUMMARY
+          echo "- \`cd src && python -m pytest tests/ --cov=. --cov-report=term\` - Check test coverage" >> $GITHUB_STEP_SUMMARY
           # Fail the workflow with clear error message
           echo "::error title=Tests Failed::Some tests failed. See warnings above for details."
           exit 1
