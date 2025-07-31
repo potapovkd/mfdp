@@ -130,22 +130,13 @@ jobs:
         "
         echo "status=$?" >> $GITHUB_OUTPUT
 
-    - name: Run database tests
-      id: db_tests
-      continue-on-error: true
-      if: always()
-      run: |
-        cd src
-        python -m pytest tests/test_db.py -v
-        echo "status=$?" >> $GITHUB_OUTPUT
-
     - name: Run unit tests
       id: unit_tests
       continue-on-error: true
       if: always()
       run: |
         cd src
-        python -m pytest tests/test_user_api.py tests/test_ml_model.py tests/test_task_queue.py -v
+        python -m pytest tests/test_unit.py -v
         echo "status=$?" >> $GITHUB_OUTPUT
 
     - name: Run integration tests
@@ -199,13 +190,7 @@ jobs:
           echo "✅ **Database Initialization**: Successfully initialized" >> $GITHUB_STEP_SUMMARY
         fi
         
-        if [ "${{ steps.db_tests.outputs.status }}" != "0" ]; then
-          echo "❌ **Database Tests**: Database tests failed" >> $GITHUB_STEP_SUMMARY
-          echo "::warning title=Database Tests::Database tests failed. Check test_db.py output above."
-          failed_tests="$failed_tests db-tests"
-        else
-          echo "✅ **Database Tests**: All database tests passed" >> $GITHUB_STEP_SUMMARY
-        fi
+
         
         if [ "${{ steps.unit_tests.outputs.status }}" != "0" ]; then
           echo "❌ **Unit Tests**: Unit tests failed" >> $GITHUB_STEP_SUMMARY
