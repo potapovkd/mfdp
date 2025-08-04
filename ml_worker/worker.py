@@ -20,6 +20,12 @@ import numpy as np
 from catboost import CatBoostRegressor
 from loguru import logger
 
+try:
+    from dvc.repo import Repo
+    dvc_available = True
+except ImportError:
+    dvc_available = False
+
 
 @dataclass
 class PricingTask:
@@ -125,6 +131,19 @@ class ScalableMLWorker:
     def _load_model(self):
         """Загрузка ML модели и pipeline."""
         try:
+            # Сначала загружаем модели из DVC remote storage
+            if dvc_available:
+                try:
+                    repo = Repo("/app")  # Путь к корню проекта в контейнере
+                    logger.info("🔄 Загружаем модели из DVC remote storage...")
+                    repo.pull("models.dvc")
+                    logger.info("✅ Модели успешно загружены из DVC")
+                except Exception as e:
+                    logger.warning(f"⚠️  Ошибка загрузки из DVC: {e}")
+                    logger.info("📁 Продолжаем с локальными файлами...")
+            else:
+                logger.warning("⚠️  DVC недоступен, используем локальные файлы")
+            
             model_path = os.getenv("MODEL_PATH", "/app/models/catboost_pricing_model.cbm")
             pipeline_path = os.getenv("PREPROCESSING_PATH", "/app/models/preprocessing_pipeline.pkl")
 

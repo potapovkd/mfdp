@@ -12,6 +12,12 @@ from catboost import CatBoostRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
+try:
+    from dvc.repo import Repo
+    dvc_available = True
+except ImportError:
+    dvc_available = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -180,3 +186,23 @@ class PricingModelTrainer:
             raise RuntimeError("Модель не была создана")
         self.model.save_model(self.model_path)
         self.metrics.save(self.metrics_path)
+        
+        # Автоматически обновляем DVC и загружаем в MinIO
+        if dvc_available:
+            try:
+                logger.info("🔄 Обновляем модели в DVC и загружаем в MinIO...")
+                repo = Repo(".")
+                
+                # Добавляем изменения в DVC
+                repo.add("models")
+                logger.info("✅ Модели добавлены в DVC")
+                
+                # Загружаем в remote storage
+                repo.push("models.dvc")
+                logger.info("✅ Модели успешно загружены в MinIO")
+                
+            except Exception as e:
+                logger.warning(f"⚠️  Ошибка обновления DVC: {e}")
+                logger.info("📁 Модели сохранены локально")
+        else:
+            logger.warning("⚠️  DVC недоступен, модели сохранены только локально")

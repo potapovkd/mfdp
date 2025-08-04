@@ -1,0 +1,5 @@
+[core]
+    remote = ml_ops_bucket
+['remote "ml_ops_bucket"']
+    url = s3://potapow/final-project-models
+    endpointurl = http://89.223.69.137:9000

@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-traditional \
+    git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -9,6 +10,10 @@ WORKDIR /app
 
 # Копируем только необходимые файлы для API
 COPY requirements.txt requirements.dev.txt ./
+# Копируем DVC конфигурацию и git репозиторий
+COPY .git ./.git
+COPY .dvc ./.dvc
+COPY models.dvc ./
 COPY src/base ./src/base
 COPY src/pricing ./src/pricing
 COPY src/products ./src/products

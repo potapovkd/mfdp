@@ -166,15 +166,14 @@ async def predict_price(
 ) -> PricingResponse:
     """Прогнозирование цены для товара."""
     try:
-        product, task = await service.create_pricing_task(
-            None, request.product_data, token.id  # Новый товар
-        )
-        return PricingResponse(
-            predicted_price=task.result["predicted_price"],
-            confidence_score=task.result["confidence_score"],
-            price_range=task.result["price_range"],
-            category_analysis=task.result["category_analysis"],
-        )
+        # Используем MLPricingService напрямую для получения прогноза
+        from products.services.services import MLPricingService
+        ml_service = MLPricingService()
+        
+        # Получаем прогноз цены
+        prediction = await ml_service.get_price_prediction(request.product_data)
+        return prediction
+        
     except (AuthenticationError, AuthorizationError) as e:
         raise HTTPException(status_code=403, detail=str(e))
     except TaskQueueError as e:
@@ -183,6 +182,7 @@ async def predict_price(
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Error predicting price: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
