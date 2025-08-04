@@ -54,20 +54,22 @@ class ProductService:
 
     async def create_pricing_task(
         self,
-        product_id: int,
+        product_id: Optional[int],
         product_data: ProductData,
         user_id: int,
     ) -> tuple[Product, Task]:
         """Создание задачи прогнозирования цены для товара."""
         try:
             async with self._uow as uow:
-                product = await uow.products.get(product_id)
-                if not product:
-                    raise ProductNotFoundError(f"Товар с ID {product_id} не найден")
-                if product.user_id != user_id:
-                    raise PermissionDeniedError(
-                        "Нет прав на создание задачи для этого товара"
-                    )
+                # Если product_id None, значит это новый товар для прогноза
+                if product_id is not None:
+                    product = await uow.products.get(product_id)
+                    if not product:
+                        raise ProductNotFoundError(f"Товар с ID {product_id} не найден")
+                    if product.user_id != user_id:
+                        raise PermissionDeniedError(
+                            "Нет прав на создание задачи для этого товара"
+                        )
 
                 product, task = await uow.products.add_pricing_task(
                     product_id,

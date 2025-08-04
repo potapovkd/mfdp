@@ -18,6 +18,12 @@ try:
 except ImportError:
     catboost_available = False
 
+try:
+    from dvc.repo import Repo
+    dvc_available = True
+except ImportError:
+    dvc_available = False
+
 from base.config import (
     get_confidence_threshold,
     get_max_price_limit,
@@ -44,6 +50,19 @@ class PricingService:
 
     def _load_model_and_pipeline(self) -> None:
         """Загрузка обученной модели и pipeline предобработки."""
+        # Сначала загружаем модели из DVC remote storage
+        if dvc_available:
+            try:
+                repo = Repo(".")
+                print("🔄 Загружаем модели из DVC remote storage...")
+                repo.pull("models.dvc")
+                print("✅ Модели успешно загружены из DVC")
+            except Exception as e:
+                print(f"⚠️  Ошибка загрузки из DVC: {e}")
+                print("📁 Продолжаем с локальными файлами...")
+        else:
+            print("⚠️  DVC недоступен, используем локальные файлы")
+        
         # Загружаем модель
         if self.model_path.exists() and catboost_available:
             try:

@@ -23,6 +23,12 @@ except ImportError:
     print("CatBoost не установлен")
     catboost_available = False
 
+try:
+    from dvc.repo import Repo
+    dvc_available = True
+except ImportError:
+    dvc_available = False
+
 
 def quick_train_model():
     """Быстрое обучение модели на малой выборке."""
@@ -166,6 +172,26 @@ def quick_train_model():
     print("✅ Модель успешно обучена и сохранена!")
     print("📁 Модель: models/catboost_pricing_model.cbm")
     print("📁 Pipeline: models/preprocessing_pipeline.pkl")
+
+    # Автоматически обновляем DVC и загружаем в MinIO
+    if dvc_available:
+        try:
+            print("🔄 Обновляем модели в DVC и загружаем в MinIO...")
+            repo = Repo(".")
+            
+            # Добавляем изменения в DVC
+            repo.add("models")
+            print("✅ Модели добавлены в DVC")
+            
+            # Загружаем в remote storage
+            repo.push("models.dvc")
+            print("✅ Модели успешно загружены в MinIO")
+            
+        except Exception as e:
+            print(f"⚠️  Ошибка обновления DVC: {e}")
+            print("📁 Модели сохранены локально")
+    else:
+        print("⚠️  DVC недоступен, модели сохранены только локально")
 
     return True
 
